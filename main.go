@@ -85,15 +85,19 @@ func main() {
 						return err
 					}
 
-					resp, err := ic.FindProviders(ctx.Context, &drp.FindProvidersRequest{
+					respCh, err := ic.FindProviders_Async(ctx.Context, &drp.FindProvidersRequest{
 						Key: drp.LinkToAny(c),
 					})
 					if err != nil {
 						return err
 					}
-					for _, r := range resp {
+					for r := range respCh {
 						var buf bytes.Buffer
-						if err := dagjson.Encode(r, &buf); err != nil {
+						if r.Err != nil {
+							log.Println(r.Err)
+							continue
+						}
+						if err := dagjson.Encode(r.Resp, &buf); err != nil {
 							return err
 						}
 						fmt.Println(buf.String())
@@ -115,8 +119,7 @@ type delegatedRoutingProxy struct {
 	dht     routing.Routing
 }
 
-func (d *delegatedRoutingProxy) FindProviders(key cid.Cid) (<-chan drc.FindProvidersAsyncResult, error) {
-	ctx := context.TODO()
+func (d *delegatedRoutingProxy) FindProviders(ctx context.Context, key cid.Cid) (<-chan drc.FindProvidersAsyncResult, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	ais := rhelpers.Parallel{
 		Routers: []routing.Routing{d.indexer, d.dht},
@@ -142,8 +145,7 @@ func (d *delegatedRoutingProxy) FindProviders(key cid.Cid) (<-chan drc.FindProvi
 	return ch, nil
 }
 
-func (d *delegatedRoutingProxy) GetIPNS(id []byte) (<-chan drc.GetIPNSAsyncResult, error) {
-	ctx := context.TODO()
+func (d *delegatedRoutingProxy) GetIPNS(ctx context.Context, id []byte) (<-chan drc.GetIPNSAsyncResult, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	recs, err := d.dht.SearchValue(ctx, ipns.RecordKey(peer.ID(id)))
 	if err != nil {
@@ -171,8 +173,7 @@ func (d *delegatedRoutingProxy) GetIPNS(id []byte) (<-chan drc.GetIPNSAsyncResul
 	return ch, nil
 }
 
-func (d *delegatedRoutingProxy) PutIPNS(id []byte, record []byte) (<-chan drc.PutIPNSAsyncResult, error) {
-	ctx := context.TODO()
+func (d *delegatedRoutingProxy) PutIPNS(ctx context.Context, id []byte, record []byte) (<-chan drc.PutIPNSAsyncResult, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	return nil, d.dht.PutValue(ctx, ipns.RecordKey(peer.ID(id)), record)

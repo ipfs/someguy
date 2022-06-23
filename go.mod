@@ -1,11 +1,12 @@
 module github.com/aschmahmann/someguy
 
-go 1.18
+go 1.17
 
 require (
 	github.com/ipfs/go-cid v0.2.0
-	github.com/ipfs/go-delegated-routing v0.2.1-0.20220524163630-968b11329985
+	github.com/ipfs/go-delegated-routing v0.2.3-0.20220618000334-8cfc0103e3b7
 	github.com/ipfs/go-ipns v0.1.2
+	github.com/ipld/go-ipld-prime v0.17.0
 	github.com/libp2p/go-libp2p v0.20.0
 	github.com/libp2p/go-libp2p-core v0.16.1
 	github.com/libp2p/go-libp2p-kad-dht v0.15.0
@@ -46,8 +47,7 @@ require (
 	github.com/ipfs/go-ipfs-util v0.0.2 // indirect
 	github.com/ipfs/go-log v1.0.5 // indirect
 	github.com/ipfs/go-log/v2 v2.5.1 // indirect
-	github.com/ipld/edelweiss v0.1.1-0.20220523211122-2134034b3e81 // indirect
-	github.com/ipld/go-ipld-prime v0.16.0 // indirect
+	github.com/ipld/edelweiss v0.1.3 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
 	github.com/jbenet/go-temp-err-catcher v0.1.0 // indirect
 	github.com/jbenet/goprocess v0.1.4 // indirect
@@ -89,7 +89,7 @@ require (
 	github.com/multiformats/go-multiaddr-dns v0.3.1 // indirect
 	github.com/multiformats/go-multiaddr-fmt v0.1.0 // indirect
 	github.com/multiformats/go-multibase v0.0.3 // indirect
-	github.com/multiformats/go-multicodec v0.4.1 // indirect
+	github.com/multiformats/go-multicodec v0.5.0 // indirect
 	github.com/multiformats/go-multihash v0.1.0 // indirect
 	github.com/multiformats/go-multistream v0.3.1 // indirect
 	github.com/multiformats/go-varint v0.0.6 // indirect
