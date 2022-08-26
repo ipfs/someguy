@@ -1,4 +1,4 @@
-module github.com/aschmahmann/someguy
+module github.com/ipfs-shipyard/someguy
 
 go 1.17
 
