@@ -1,9 +1,10 @@
 package main
 
 import (
-	"github.com/urfave/cli/v2"
 	"log"
 	"os"
+
+	"github.com/urfave/cli/v2"
 
 	"github.com/ipfs/go-cid"
 )
@@ -23,9 +24,14 @@ func main() {
 						Usage: "port to serve requests on",
 						Value: 8080,
 					},
+					&cli.BoolFlag{
+						Name:  "accelerated-dht",
+						Usage: "run the accelerated dht client",
+						Value: true,
+					},
 				},
 				Action: func(ctx *cli.Context) error {
-					return start(ctx.Context, ctx.Int("port"))
+					return start(ctx.Context, ctx.Int("port"), ctx.Bool("accelerated-dht"))
 				},
 			},
 			{
