@@ -17,8 +17,15 @@ func main() {
 		Commands: []*cli.Command{
 			{
 				Name: "start",
+				Flags: []cli.Flag{
+					&cli.IntFlag{
+						Name:  "port",
+						Usage: "port to serve requests on",
+						Value: 8080,
+					},
+				},
 				Action: func(ctx *cli.Context) error {
-					return start(ctx.Context, 8080)
+					return start(ctx.Context, ctx.Int("port"))
 				},
 			},
 			{

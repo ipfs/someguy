@@ -12,4 +12,4 @@ RUN go build -o /someguy
 
 EXPOSE 8080
 
-CMD [ "/someguy", "start" ]
+CMD [ "/someguy", "start", "--port", "8080" ]
