@@ -1,12 +1,15 @@
 package main
 
 import (
+	"errors"
 	"log"
 	"os"
 
 	"github.com/urfave/cli/v2"
 
 	"github.com/ipfs/go-cid"
+	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/multiformats/go-multibase"
 )
 
 const devIndexerEndpoint = "https://dev.cid.contact/reframe"
@@ -42,14 +45,78 @@ func main() {
 						Usage: "Reframe endpoint",
 						Value: devIndexerEndpoint,
 					},
+					&cli.BoolFlag{
+						Name:  "pretty",
+						Usage: "output data in a prettier format that may convey less information",
+						Value: false,
+					},
 				},
-				Action: func(ctx *cli.Context) error {
-					cstr := ctx.Args().Get(0)
-					c, err := cid.Parse(cstr)
-					if err != nil {
-						return err
-					}
-					return ask(ctx.Context, c, ctx.String("endpoint"))
+				Subcommands: []*cli.Command{
+					{
+						Name:      "identify",
+						UsageText: "Find which methods are supported by the reframe endpoint",
+						Action: func(ctx *cli.Context) error {
+							if ctx.NArg() != 0 {
+								return errors.New("invalid command, see help")
+							}
+							return identify(ctx.Context, ctx.String("endpoint"), ctx.Bool("pretty"))
+						},
+					},
+					{
+						Name:      "findprovs",
+						Usage:     "findprovs <cid>",
+						UsageText: "Find providers of a given CID",
+						Action: func(ctx *cli.Context) error {
+							if ctx.NArg() != 1 {
+								return errors.New("invalid command, see help")
+							}
+							cstr := ctx.Args().Get(0)
+							c, err := cid.Parse(cstr)
+							if err != nil {
+								return err
+							}
+							return findprovs(ctx.Context, c, ctx.String("endpoint"), ctx.Bool("pretty"))
+						},
+					},
+					{
+						Name:  "getipns",
+						Usage: "getipns <ipns-id>",
+						UsageText: "Get the value of an IPNS ID",
+						Action: func(ctx *cli.Context) error {
+							if ctx.NArg() != 1 {
+								return errors.New("invalid command, see help")
+							}
+							pstr := ctx.Args().Get(0)
+							p, err := peer.Decode(pstr)
+							if err != nil {
+								return err
+							}
+							return getIPNS(ctx.Context, p, ctx.String("endpoint"), ctx.Bool("pretty"))
+						},
+					},
+					{
+						Name:  "putipns",
+						Usage: "putipns <ipns-id> <multibase-encoded-record>",
+						UsageText: "Put an IPNS record",
+						Flags: []cli.Flag{
+						},
+						Action: func(ctx *cli.Context) error {
+							if ctx.NArg() != 2 {
+								return errors.New("invalid command, see help")
+							}
+							pstr := ctx.Args().Get(0)
+							p, err := peer.Decode(pstr)
+							if err != nil {
+								return err
+							}
+							recordStr := ctx.Args().Get(1)
+							_, recBytes, err := multibase.Decode(recordStr)
+							if err != nil {
+								return err
+							}
+							return putIPNS(ctx.Context, p, recBytes, ctx.String("endpoint"))
+						},
+					},
 				},
 			},
 		},
