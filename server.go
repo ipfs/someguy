@@ -242,7 +242,11 @@ func (d *delegatedRoutingProxy) GetIPNS(ctx context.Context, id []byte) (<-chan 
 func (d *delegatedRoutingProxy) PutIPNS(ctx context.Context, id []byte, record []byte) (<-chan drc.PutIPNSAsyncResult, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	return nil, d.dht.PutValue(ctx, ipns.RecordKey(peer.ID(id)), record)
+	err := d.dht.PutValue(ctx, ipns.RecordKey(peer.ID(id)), record)
+	ch := make(chan drc.PutIPNSAsyncResult, 1)
+	ch <- drc.PutIPNSAsyncResult{Err: err}
+	close(ch)
+	return ch, nil
 }
 
 var _ drs.DelegatedRoutingService = (*delegatedRoutingProxy)(nil)
