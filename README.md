@@ -1,4 +1,7 @@
 # someguy
+
+> ⚠️ Reframe has been deprecated in favour of the [Routing V1 Specification](https://specs.ipfs.tech/routing/http-routing-v1/).
+
 A Reframe server you can delegate routing requests to. Ask someguy for directions.
 
 ## Usage
