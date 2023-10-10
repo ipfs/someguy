@@ -25,13 +25,7 @@ import (
 	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 )
 
-func start(ctx context.Context, port int, runAcceleratedDHTClient bool) error {
-	indexerClient, err := client.New(cidContactEndpoint)
-	if err != nil {
-		return err
-	}
-	indexerRouting := newWrappedDelegatedRouting(indexerClient)
-
+func start(ctx context.Context, port int, runAcceleratedDHTClient bool, contentEndpoints, peerEndpoints, ipnsEndpoints []string) error {
 	h, err := newHost(runAcceleratedDHTClient)
 	if err != nil {
 		return err
@@ -52,14 +46,25 @@ func start(ctx context.Context, port int, runAcceleratedDHTClient bool) error {
 		dhtRouting = standardDHT
 	}
 
+	crRouters, err := getCombinedRouting(contentEndpoints, dhtRouting)
+	if err != nil {
+		return err
+	}
+
+	prRouters, err := getCombinedRouting(peerEndpoints, dhtRouting)
+	if err != nil {
+		return err
+	}
+
+	ipnsRouters, err := getCombinedRouting(ipnsEndpoints, dhtRouting)
+	if err != nil {
+		return err
+	}
+
 	proxy := &delegatedRoutingProxy{
-		cr: routinghelpers.Parallel{
-			Routers: []routing.Routing{indexerRouting, dhtRouting},
-		},
-		pr: routinghelpers.Parallel{
-			Routers: []routing.Routing{indexerRouting, dhtRouting},
-		},
-		vs: dhtRouting,
+		cr: crRouters,
+		pr: prRouters,
+		vs: ipnsRouters,
 	}
 
 	log.Printf("Listening on http://0.0.0.0:%d", port)
@@ -178,6 +183,26 @@ func (w *wrappedStandardAndAcceleratedDHTClient) SearchValue(ctx context.Context
 
 func (w *wrappedStandardAndAcceleratedDHTClient) Bootstrap(ctx context.Context) error {
 	return w.standard.Bootstrap(ctx)
+}
+
+func getCombinedRouting(endpoints []string, dht routing.Routing) (routing.Routing, error) {
+	if len(endpoints) == 0 {
+		return dht, nil
+	}
+
+	var routers []routing.Routing
+
+	for _, endpoint := range endpoints {
+		drclient, err := client.New(endpoint)
+		if err != nil {
+			return nil, err
+		}
+		routers = append(routers, newWrappedDelegatedRouting(drclient))
+	}
+
+	return routinghelpers.Parallel{
+		Routers: append(routers, dht),
+	}, nil
 }
 
 type wrappedDelegatedRouting struct {

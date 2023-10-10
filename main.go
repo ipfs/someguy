@@ -29,12 +29,27 @@ func main() {
 					},
 					&cli.BoolFlag{
 						Name:  "accelerated-dht",
-						Usage: "run the accelerated dht client",
+						Usage: "run the accelerated DHT client",
 						Value: true,
+					},
+					&cli.StringSliceFlag{
+						Name:  "content-endpoints",
+						Usage: "other Delegated Routing V1 endpoints to proxy provider requests to",
+						Value: cli.NewStringSlice(cidContactEndpoint),
+					},
+					&cli.StringSliceFlag{
+						Name:  "peer-endpoints",
+						Usage: "other Delegated Routing V1 endpoints to proxy peer requests to",
+						Value: cli.NewStringSlice(),
+					},
+					&cli.StringSliceFlag{
+						Name:  "ipns-endpoints",
+						Usage: "other Delegated Routing V1 endpoints to proxy IPNS requests to",
+						Value: cli.NewStringSlice(),
 					},
 				},
 				Action: func(ctx *cli.Context) error {
-					return start(ctx.Context, ctx.Int("port"), ctx.Bool("accelerated-dht"))
+					return start(ctx.Context, ctx.Int("port"), ctx.Bool("accelerated-dht"), ctx.StringSlice("content-endpoints"), ctx.StringSlice("peer-endpoints"), ctx.StringSlice("ipns-endpoints"))
 				},
 			},
 			{
@@ -42,7 +57,7 @@ func main() {
 				Flags: []cli.Flag{
 					&cli.StringFlag{
 						Name:  "endpoint",
-						Usage: "Delegated Routing V1 endpoint",
+						Usage: "the Delegated Routing V1 endpoint to ask",
 						Value: cidContactEndpoint,
 					},
 					&cli.BoolFlag{
