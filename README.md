@@ -1,18 +1,26 @@
 # someguy
 
-> ⚠️ Reframe has been deprecated in favour of the [Routing V1 Specification](https://specs.ipfs.tech/routing/http-routing-v1/).
+A [Delegated Routing V1](https://specs.ipfs.tech/routing/http-routing-v1/) server and client for all your routing needs. Ask `someguy` for directions.
 
-A Reframe server you can delegate routing requests to. Ask someguy for directions.
+## Install
+
+```bash
+go install github.com/ipfs-shipyard/someguy@latest
+```
+
+
+## Build
+
+```bash
+go build -o someguy
+```
 
 ## Usage
 
-`someguy start` runs a [Reframe](https://github.com/ipfs/specs/blob/6bdb7b2751038e1d0212a40494ea8fd4018f384c/REFRAME.md) server
-that proxies requests to the IPFS Public DHT and an Indexer node (planned to be upgraded to querying the indexer network more broadly).
+You can use `someguy`  as a client or server.
 
-If you don't feel like running any routing code yourself, that's ok just ask `someguy` to do it for you.
+`someguy start` runs a Delegated Routing V1 server that proxies requests to the [IPFS Amino DHT](https://blog.ipfs.tech/2023-09-amino-refactoring/) and the [cid.contact](https://cid.contact) indexer node. We plan on supporting additional custom endpoints.
 
-If you're looking for an implementation of a Reframe client already packaged up and ready to use check out https://github.com/ipfs/go-delegated-routing.
+If you don't want to run a server yourself, but want to query some other server, you can run `someguy ask` and choose any of the subcommands and ask for a provider, a peer, or even an IPNS record.
 
-If you're missing tooling in your language you can take a look at the spec to write an HTTP client yourself, 
-or if you're up to it add codegeneration for your language into https://github.com/ipld/edelweiss/ to make it easier to maintain
-your implementation if/when more methods are added to Reframe.
+For more details run `someguy --help`.

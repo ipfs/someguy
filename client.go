@@ -1,177 +1,161 @@
 package main
 
 import (
-	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
-	"strings"
+	"os"
 	"time"
 
-	pbuf "github.com/gogo/protobuf/proto"
-
+	"github.com/ipfs/boxo/ipns"
+	"github.com/ipfs/boxo/routing/http/client"
+	"github.com/ipfs/boxo/routing/http/types"
+	"github.com/ipfs/boxo/routing/http/types/iter"
 	"github.com/ipfs/go-cid"
-	"github.com/ipfs/go-delegated-routing/client"
-	"github.com/ipfs/go-ipns"
-	ipns_pb "github.com/ipfs/go-ipns/pb"
-	"github.com/ipld/go-ipld-prime/codec/dagjson"
-	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/multiformats/go-multiaddr"
-
-	drp "github.com/ipfs/go-delegated-routing/gen/proto"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-func identify(ctx context.Context, endpoint string, prettyOutput bool) error {
-	ic, err := drp.New_DelegatedRouting_Client(endpoint)
+func findProviders(ctx context.Context, key cid.Cid, endpoint string, prettyOutput bool) error {
+	drc, err := client.New(endpoint)
 	if err != nil {
 		return err
 	}
 
-	respCh, err := ic.Identify_Async(ctx, &drp.DelegatedRouting_IdentifyArg{})
-	for r := range respCh {
-		if r.Err != nil {
-			log.Println(r.Err)
-			continue
+	recordsIter, err := drc.FindProviders(ctx, key)
+	if err != nil {
+		return err
+	}
+	defer recordsIter.Close()
+
+	return printIter(os.Stdout, prettyOutput, recordsIter)
+}
+
+func findPeers(ctx context.Context, pid peer.ID, endpoint string, prettyOutput bool) error {
+	drc, err := client.New(endpoint)
+	if err != nil {
+		return err
+	}
+
+	recordsIter, err := drc.FindPeers(ctx, pid)
+	if err != nil {
+		return err
+	}
+	defer recordsIter.Close()
+
+	return printIter(os.Stdout, prettyOutput, recordsIter)
+}
+
+func printIter(w io.Writer, prettyOutput bool, iter iter.ResultIter[types.Record]) error {
+	for iter.Next() {
+		res := iter.Val()
+
+		// Check for error, but do not complain if we exceeded the timeout. We are
+		// expecting that to happen: we explicitly defined a timeout.
+		if res.Err != nil {
+			if !errors.Is(res.Err, context.DeadlineExceeded) {
+				return res.Err
+			}
+
+			return nil
 		}
 
-		if !prettyOutput {
-			var buf bytes.Buffer
-			if err := dagjson.Encode(r.Resp, &buf); err != nil {
+		if prettyOutput {
+			switch res.Val.GetSchema() {
+			case types.SchemaPeer:
+				record := res.Val.(*types.PeerRecord)
+				fmt.Fprintln(w, record.ID)
+				fmt.Fprintln(w, "\tProtocols:", record.Protocols)
+				fmt.Fprintln(w, "\tAddresses:", record.Addrs)
+
+			case types.SchemaBitswap:
+				record := res.Val.(*types.BitswapRecord)
+				fmt.Fprintln(w, record.ID)
+				fmt.Fprintln(w, "\tProtocol:", record.Protocol)
+				fmt.Fprintln(w, "\tAddresses:", record.Addrs)
+
+			default:
+				// You may not want to fail here, it's up to you. You can just handle
+				// the schemas you want, or that you know, but not fail.
+				log.Printf("unrecognized schema: %s", res.Val.GetSchema())
+			}
+		} else {
+			err := json.NewEncoder(os.Stdout).Encode(res.Val)
+			if err != nil {
 				return err
 			}
-			fmt.Println(buf.String())
-		} else {
-			var methods []string
-			for _, m := range r.Resp.Methods {
-				methods = append(methods, string(m))
-			}
-			fmt.Println(strings.Join(methods, ","))
 		}
 	}
+
 	return nil
 }
 
-func findprovs(ctx context.Context, c cid.Cid, endpoint string, prettyOutput bool) error {
-	ic, err := drp.New_DelegatedRouting_Client(endpoint)
+func getIPNS(ctx context.Context, name ipns.Name, endpoint string, prettyOutput bool) error {
+	drc, err := client.New(endpoint)
 	if err != nil {
 		return err
 	}
 
-	respCh, err := ic.FindProviders_Async(ctx, &drp.FindProvidersRequest{
-		Key: drp.LinkToAny(c),
-	})
-	if err != nil {
-		return err
-	}
-	for r := range respCh {
-		if r.Err != nil {
-			log.Println(r.Err)
-			continue
-		}
-
-		if !prettyOutput {
-			var buf bytes.Buffer
-			if err := dagjson.Encode(r.Resp, &buf); err != nil {
-				return err
-			}
-			fmt.Println(buf.String())
-		} else {
-			for _, prov := range r.Resp.Providers {
-				if prov.ProviderNode.Peer != nil {
-					ai := &peer.AddrInfo{}
-					ai.ID = peer.ID(prov.ProviderNode.Peer.ID)
-					for _, bma := range prov.ProviderNode.Peer.Multiaddresses {
-						ma, err := multiaddr.NewMultiaddrBytes(bma)
-						if err != nil {
-							return err
-						}
-						ai.Addrs = append(ai.Addrs, ma)
-					}
-					fmt.Println(ai)
-				}
-				for _, proto := range prov.ProviderProto {
-					if proto.Bitswap != nil {
-						fmt.Println("\t Bitswap")
-					} else if proto.GraphSyncFILv1 != nil {
-						fmt.Println("\t GraphSyncFILv1")
-						var buf bytes.Buffer
-						if err := dagjson.Encode(proto.GraphSyncFILv1, &buf); err != nil {
-							return err
-						}
-						fmt.Println("\t\t" + buf.String())
-					} else {
-						var buf bytes.Buffer
-						if err := dagjson.Encode(proto, &buf); err != nil {
-							return err
-						}
-						fmt.Println("\t" + buf.String())
-					}
-				}
-			}
-		}
-	}
-	return nil
-}
-
-func getIPNS(ctx context.Context, p peer.ID, endpoint string, prettyOutput bool) error {
-	ic, err := drp.New_DelegatedRouting_Client(endpoint)
+	rec, err := drc.GetIPNS(ctx, name)
 	if err != nil {
 		return err
 	}
 
 	if prettyOutput {
-		c := client.NewClient(ic)
-		respCh, err := c.GetIPNSAsync(ctx, []byte(p))
+		v, err := rec.Value()
 		if err != nil {
 			return err
 		}
-		for r := range respCh {
-			if r.Err != nil {
-				log.Println(r.Err)
-				continue
-			}
-			rec  := new(ipns_pb.IpnsEntry)
-			if err := pbuf.Unmarshal(r.Record, rec); err != nil {
-				return err
-			}
-			seqno := rec.GetSequence()
-			ttl := time.Duration(rec.GetTtl())
-			eol, err := ipns.GetEOL(rec)
-			if err != nil {
-				return err
-			}
-			value := string(rec.GetValue())
-			fmt.Printf("Sequence: %d, TTL: %v, EOL: %v, Value: %s\n", seqno, ttl, eol, value)
+
+		seq, err := rec.Sequence()
+		if err != nil {
+			return err
 		}
+
+		eol, err := rec.Validity()
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("/ipns/%s\n", name)
+
+		// Since [client.Client.GetIPNS] verifies if the retrieved record is valid, we
+		// do not need to verify it again. However, if you were not using this specific
+		// client, but using some other tool, you should always validate the IPNS Record
+		// using the [ipns.Validate] or [ipns.ValidateWithName] functions.
+		fmt.Println("\tSignature: VALID")
+		fmt.Println("\tValue:", v.String())
+		fmt.Println("\tSequence:", seq)
+		fmt.Println("\tValidity:", eol.Format(time.RFC3339))
+		ttl, err := rec.TTL()
+		if err == nil {
+			fmt.Println("\tTTL:", ttl.String())
+		}
+
 		return nil
 	}
 
-	respCh, err := ic.GetIPNS_Async(ctx, &drp.GetIPNSRequest{
-		ID: []byte(p),
-	})
+	raw, err := ipns.MarshalRecord(rec)
 	if err != nil {
 		return err
 	}
-	for r := range respCh {
-		if r.Err != nil {
-			log.Println(r.Err)
-			continue
-		}
-		var buf bytes.Buffer
-		if err := dagjson.Encode(r.Resp, &buf); err != nil {
-			return err
-		}
-		fmt.Println(buf.String())
-	}
-	return nil
+
+	_, err = os.Stdout.Write(raw)
+	return err
 }
 
-func putIPNS(ctx context.Context, key peer.ID, record []byte, endpoint string) error {
-	ic, err := drp.New_DelegatedRouting_Client(endpoint)
+func putIPNS(ctx context.Context, name ipns.Name, record []byte, endpoint string) error {
+	drc, err := client.New(endpoint)
 	if err != nil {
 		return err
 	}
 
-	c := client.NewClient(ic)
-	return c.PutIPNS(ctx, []byte(key), record)
+	rec, err := ipns.UnmarshalRecord(record)
+	if err != nil {
+		return err
+	}
+
+	return drc.PutIPNS(ctx, name, rec)
 }

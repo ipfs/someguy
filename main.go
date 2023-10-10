@@ -5,19 +5,19 @@ import (
 	"log"
 	"os"
 
-	"github.com/urfave/cli/v2"
-
+	"github.com/ipfs/boxo/ipns"
 	"github.com/ipfs/go-cid"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multibase"
+	"github.com/urfave/cli/v2"
 )
 
-const devIndexerEndpoint = "https://dev.cid.contact/reframe"
+const cidContactEndpoint = "https://cid.contact"
 
 func main() {
 	app := &cli.App{
 		Name:  "someguy",
-		Usage: "ask someguy for your Reframe routing requests",
+		Usage: "ask someguy for your Delegated Routing requests",
 		Commands: []*cli.Command{
 			{
 				Name: "start",
@@ -42,8 +42,8 @@ func main() {
 				Flags: []cli.Flag{
 					&cli.StringFlag{
 						Name:  "endpoint",
-						Usage: "Reframe endpoint",
-						Value: devIndexerEndpoint,
+						Usage: "Delegated Routing V1 endpoint",
+						Value: cidContactEndpoint,
 					},
 					&cli.BoolFlag{
 						Name:  "pretty",
@@ -53,16 +53,6 @@ func main() {
 				},
 				Subcommands: []*cli.Command{
 					{
-						Name:      "identify",
-						UsageText: "Find which methods are supported by the reframe endpoint",
-						Action: func(ctx *cli.Context) error {
-							if ctx.NArg() != 0 {
-								return errors.New("invalid command, see help")
-							}
-							return identify(ctx.Context, ctx.String("endpoint"), ctx.Bool("pretty"))
-						},
-					},
-					{
 						Name:      "findprovs",
 						Usage:     "findprovs <cid>",
 						UsageText: "Find providers of a given CID",
@@ -70,42 +60,57 @@ func main() {
 							if ctx.NArg() != 1 {
 								return errors.New("invalid command, see help")
 							}
-							cstr := ctx.Args().Get(0)
-							c, err := cid.Parse(cstr)
+							cidStr := ctx.Args().Get(0)
+							c, err := cid.Parse(cidStr)
 							if err != nil {
 								return err
 							}
-							return findprovs(ctx.Context, c, ctx.String("endpoint"), ctx.Bool("pretty"))
+							return findProviders(ctx.Context, c, ctx.String("endpoint"), ctx.Bool("pretty"))
 						},
 					},
 					{
-						Name:  "getipns",
-						Usage: "getipns <ipns-id>",
+						Name:      "findpeers",
+						Usage:     "findpeers <pid>",
+						UsageText: "Find a peer of a given PID",
+						Action: func(ctx *cli.Context) error {
+							if ctx.NArg() != 1 {
+								return errors.New("invalid command, see help")
+							}
+							pidStr := ctx.Args().Get(0)
+							pid, err := peer.Decode(pidStr)
+							if err != nil {
+								return err
+							}
+							return findPeers(ctx.Context, pid, ctx.String("endpoint"), ctx.Bool("pretty"))
+						},
+					},
+					{
+						Name:      "getipns",
+						Usage:     "getipns <ipns-id>",
 						UsageText: "Get the value of an IPNS ID",
 						Action: func(ctx *cli.Context) error {
 							if ctx.NArg() != 1 {
 								return errors.New("invalid command, see help")
 							}
-							pstr := ctx.Args().Get(0)
-							p, err := peer.Decode(pstr)
+							nameStr := ctx.Args().Get(0)
+							name, err := ipns.NameFromString(nameStr)
 							if err != nil {
 								return err
 							}
-							return getIPNS(ctx.Context, p, ctx.String("endpoint"), ctx.Bool("pretty"))
+							return getIPNS(ctx.Context, name, ctx.String("endpoint"), ctx.Bool("pretty"))
 						},
 					},
 					{
-						Name:  "putipns",
-						Usage: "putipns <ipns-id> <multibase-encoded-record>",
+						Name:      "putipns",
+						Usage:     "putipns <ipns-id> <multibase-encoded-record>",
 						UsageText: "Put an IPNS record",
-						Flags: []cli.Flag{
-						},
+						Flags:     []cli.Flag{},
 						Action: func(ctx *cli.Context) error {
 							if ctx.NArg() != 2 {
 								return errors.New("invalid command, see help")
 							}
-							pstr := ctx.Args().Get(0)
-							p, err := peer.Decode(pstr)
+							nameStr := ctx.Args().Get(0)
+							name, err := ipns.NameFromString(nameStr)
 							if err != nil {
 								return err
 							}
@@ -114,7 +119,7 @@ func main() {
 							if err != nil {
 								return err
 							}
-							return putIPNS(ctx.Context, p, recBytes, ctx.String("endpoint"))
+							return putIPNS(ctx.Context, name, recBytes, ctx.String("endpoint"))
 						},
 					},
 				},
