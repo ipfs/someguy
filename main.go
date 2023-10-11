@@ -33,7 +33,7 @@ func main() {
 						Value: true,
 					},
 					&cli.StringSliceFlag{
-						Name:  "content-endpoints",
+						Name:  "provider-endpoints",
 						Usage: "other Delegated Routing V1 endpoints to proxy provider requests to",
 						Value: cli.NewStringSlice(cidContactEndpoint),
 					},
@@ -49,7 +49,7 @@ func main() {
 					},
 				},
 				Action: func(ctx *cli.Context) error {
-					return start(ctx.Context, ctx.Int("port"), ctx.Bool("accelerated-dht"), ctx.StringSlice("content-endpoints"), ctx.StringSlice("peer-endpoints"), ctx.StringSlice("ipns-endpoints"))
+					return start(ctx.Context, ctx.Int("port"), ctx.Bool("accelerated-dht"), ctx.StringSlice("provider-endpoints"), ctx.StringSlice("peer-endpoints"), ctx.StringSlice("ipns-endpoints"))
 				},
 			},
 			{

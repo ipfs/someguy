@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"time"
 
@@ -77,12 +76,16 @@ func printIter(w io.Writer, prettyOutput bool, iter iter.ResultIter[types.Record
 				fmt.Fprintln(w, "\tAddresses:", record.Addrs)
 
 			default:
-				// You may not want to fail here, it's up to you. You can just handle
-				// the schemas you want, or that you know, but not fail.
-				log.Printf("unrecognized schema: %s", res.Val.GetSchema())
+				// This is an unknown schema. Let's just print it raw.
+				err := json.NewEncoder(w).Encode(res.Val)
+				if err != nil {
+					return err
+				}
 			}
+
+			fmt.Fprintln(w)
 		} else {
-			err := json.NewEncoder(os.Stdout).Encode(res.Val)
+			err := json.NewEncoder(w).Encode(res.Val)
 			if err != nil {
 				return err
 			}
@@ -125,12 +128,12 @@ func getIPNS(ctx context.Context, name ipns.Name, endpoint string, prettyOutput 
 		// do not need to verify it again. However, if you were not using this specific
 		// client, but using some other tool, you should always validate the IPNS Record
 		// using the [ipns.Validate] or [ipns.ValidateWithName] functions.
-		fmt.Println("\tSignature: VALID")
+		fmt.Println("\tSignature Validated")
 		fmt.Println("\tValue:", v.String())
 		fmt.Println("\tSequence:", seq)
+		fmt.Println("\tValidityType : EOL/End-of-Life")
 		fmt.Println("\tValidity:", eol.Format(time.RFC3339))
-		ttl, err := rec.TTL()
-		if err == nil {
+		if ttl, err := rec.TTL(); err == nil {
 			fmt.Println("\tTTL:", ttl.String())
 		}
 
