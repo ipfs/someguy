@@ -2,64 +2,75 @@ package main
 
 import (
 	"context"
-	rcmgr "github.com/libp2p/go-libp2p-resource-manager"
+	"log"
 	"net/http"
 	"strconv"
+	"time"
 
+	"github.com/ipfs/boxo/ipns"
+	"github.com/ipfs/boxo/routing/http/client"
+	"github.com/ipfs/boxo/routing/http/contentrouter"
+	"github.com/ipfs/boxo/routing/http/server"
+	"github.com/ipfs/boxo/routing/http/types"
+	"github.com/ipfs/boxo/routing/http/types/iter"
 	"github.com/ipfs/go-cid"
-	"github.com/ipfs/go-ipns"
 	"github.com/libp2p/go-libp2p"
-	"github.com/libp2p/go-libp2p-core/host"
-	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/libp2p/go-libp2p-core/routing"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-kad-dht/fullrt"
 	record "github.com/libp2p/go-libp2p-record"
-	rhelpers "github.com/libp2p/go-libp2p-routing-helpers"
-
-	drc "github.com/ipfs/go-delegated-routing/client"
-	drp "github.com/ipfs/go-delegated-routing/gen/proto"
-	drs "github.com/ipfs/go-delegated-routing/server"
+	routinghelpers "github.com/libp2p/go-libp2p-routing-helpers"
+	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/routing"
+	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 )
 
-func start(ctx context.Context, port int, runAcceleratedDHTClient bool) error {
-	indexerClient, err := drp.New_DelegatedRouting_Client(devIndexerEndpoint)
-	if err != nil {
-		return err
-	}
-
+func start(ctx context.Context, port int, runAcceleratedDHTClient bool, contentEndpoints, peerEndpoints, ipnsEndpoints []string) error {
 	h, err := newHost(runAcceleratedDHTClient)
 	if err != nil {
 		return err
 	}
 
-	var d routing.Routing
-
+	var dhtRouting routing.Routing
 	if runAcceleratedDHTClient {
-		wrappedDHT, err := wrapAcceleratedAndRegularClient(ctx, h)
+		wrappedDHT, err := newWrappedStandardAndAcceleratedDHTClient(ctx, h)
 		if err != nil {
 			return err
 		}
-		d = wrappedDHT
+		dhtRouting = wrappedDHT
 	} else {
-		bsPeers, err := peer.AddrInfosFromP2pAddrs(dht.DefaultBootstrapPeers...)
+		standardDHT, err := dht.New(ctx, h, dht.Mode(dht.ModeClient), dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...))
 		if err != nil {
 			return err
 		}
-		standardDHT, err := dht.New(ctx, h, dht.Mode(dht.ModeClient), dht.BootstrapPeers(bsPeers...))
-		if err != nil {
-			return err
-		}
-		d = standardDHT
+		dhtRouting = standardDHT
+	}
+
+	crRouters, err := getCombinedRouting(contentEndpoints, dhtRouting)
+	if err != nil {
+		return err
+	}
+
+	prRouters, err := getCombinedRouting(peerEndpoints, dhtRouting)
+	if err != nil {
+		return err
+	}
+
+	ipnsRouters, err := getCombinedRouting(ipnsEndpoints, dhtRouting)
+	if err != nil {
+		return err
 	}
 
 	proxy := &delegatedRoutingProxy{
-		indexer: &contentRoutingIndexerWrapper{indexer: drc.NewContentRoutingClient(drc.NewClient(indexerClient))},
-		dht:     d,
+		cr: crRouters,
+		pr: prRouters,
+		vs: ipnsRouters,
 	}
 
-	f := drs.DelegatedRoutingAsyncHandler(proxy)
-	http.Handle("/", f)
+	log.Printf("Listening on http://0.0.0.0:%d", port)
+	log.Printf("Delegated Routing API on http://127.0.0.1:%d/routing/v1", port)
+
+	http.Handle("/", server.Handler(proxy))
 	return http.ListenAndServe(":"+strconv.Itoa(port), nil)
 }
 
@@ -100,6 +111,32 @@ func newHost(highOutboundLimits bool) (host.Host, error) {
 type wrappedStandardAndAcceleratedDHTClient struct {
 	standard    *dht.IpfsDHT
 	accelerated *fullrt.FullRT
+}
+
+func newWrappedStandardAndAcceleratedDHTClient(ctx context.Context, h host.Host) (routing.Routing, error) {
+	standardDHT, err := dht.New(ctx, h, dht.Mode(dht.ModeClient), dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...))
+	if err != nil {
+		return nil, err
+	}
+
+	acceleratedDHT, err := fullrt.NewFullRT(h, "/ipfs",
+		fullrt.DHTOption(
+			dht.BucketSize(20),
+			dht.Validator(record.NamespacedValidator{
+				"pk":   record.PublicKeyValidator{},
+				"ipns": ipns.Validator{},
+			}),
+			dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...),
+			dht.Mode(dht.ModeClient),
+		))
+	if err != nil {
+		return nil, err
+	}
+
+	return &wrappedStandardAndAcceleratedDHTClient{
+		standard:    standardDHT,
+		accelerated: acceleratedDHT,
+	}, nil
 }
 
 func (w *wrappedStandardAndAcceleratedDHTClient) Provide(ctx context.Context, c cid.Cid, b bool) error {
@@ -148,139 +185,144 @@ func (w *wrappedStandardAndAcceleratedDHTClient) Bootstrap(ctx context.Context) 
 	return w.standard.Bootstrap(ctx)
 }
 
-var _ routing.Routing = (*wrappedStandardAndAcceleratedDHTClient)(nil)
-
-func wrapAcceleratedAndRegularClient(ctx context.Context, h host.Host) (routing.Routing, error) {
-	bsPeers, err := peer.AddrInfosFromP2pAddrs(dht.DefaultBootstrapPeers...)
-	if err != nil {
-		return nil, err
-	}
-	standardDHT, err := dht.New(ctx, h, dht.Mode(dht.ModeClient), dht.BootstrapPeers(bsPeers...))
-	if err != nil {
-		return nil, err
+func getCombinedRouting(endpoints []string, dht routing.Routing) (routing.Routing, error) {
+	if len(endpoints) == 0 {
+		return dht, nil
 	}
 
-	acceleratedDHT, err := fullrt.NewFullRT(h, "/ipfs",
-		fullrt.DHTOption(
-			dht.BucketSize(20),
-			dht.Validator(record.NamespacedValidator{
-				"pk":   record.PublicKeyValidator{},
-				"ipns": ipns.Validator{},
-			}),
-			dht.BootstrapPeers(bsPeers...),
-			dht.Mode(dht.ModeClient),
-		))
-	if err != nil {
-		return nil, err
+	var routers []routing.Routing
+
+	for _, endpoint := range endpoints {
+		drclient, err := client.New(endpoint)
+		if err != nil {
+			return nil, err
+		}
+		routers = append(routers, newWrappedDelegatedRouting(drclient))
 	}
 
-	return &wrappedStandardAndAcceleratedDHTClient{
-		standard:    standardDHT,
-		accelerated: acceleratedDHT,
+	return routinghelpers.Parallel{
+		Routers: append(routers, dht),
 	}, nil
 }
 
+type wrappedDelegatedRouting struct {
+	routing.ValueStore
+	routing.PeerRouting
+	routing.ContentRouting
+}
+
+func newWrappedDelegatedRouting(drc *client.Client) routing.Routing {
+	v := contentrouter.NewContentRoutingClient(drc)
+
+	return &wrappedDelegatedRouting{
+		ValueStore:     v,
+		PeerRouting:    v,
+		ContentRouting: v,
+	}
+}
+
+func (c *wrappedDelegatedRouting) Bootstrap(ctx context.Context) error {
+	return routing.ErrNotSupported
+}
+
 type delegatedRoutingProxy struct {
-	indexer routing.Routing
-	dht     routing.Routing
+	cr routing.ContentRouting
+	pr routing.PeerRouting
+	vs routing.ValueStore
 }
 
-func (d *delegatedRoutingProxy) FindProviders(ctx context.Context, key cid.Cid) (<-chan drc.FindProvidersAsyncResult, error) {
+func (d *delegatedRoutingProxy) FindProviders(ctx context.Context, key cid.Cid, limit int) (iter.ResultIter[types.Record], error) {
 	ctx, cancel := context.WithCancel(ctx)
-	ais := rhelpers.Parallel{
-		Routers: []routing.Routing{d.indexer, d.dht},
-	}.FindProvidersAsync(ctx, key, 0)
-
-	ch := make(chan drc.FindProvidersAsyncResult)
-
-	go func() {
-		defer close(ch)
-		defer cancel()
-		for ai := range ais {
-			next := drc.FindProvidersAsyncResult{
-				AddrInfo: []peer.AddrInfo{ai},
-				Err:      nil,
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case ch <- next:
-			}
-		}
-	}()
-	return ch, nil
+	ch := d.cr.FindProvidersAsync(ctx, key, limit)
+	return iter.ToResultIter[types.Record](&peerChanIter{
+		ch:     ch,
+		cancel: cancel,
+	}), nil
 }
 
-func (d *delegatedRoutingProxy) GetIPNS(ctx context.Context, id []byte) (<-chan drc.GetIPNSAsyncResult, error) {
+func (d *delegatedRoutingProxy) ProvideBitswap(ctx context.Context, req *server.BitswapWriteProvideRequest) (time.Duration, error) {
+	return 0, routing.ErrNotSupported
+}
+
+func (d *delegatedRoutingProxy) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[types.Record], error) {
 	ctx, cancel := context.WithCancel(ctx)
-	recs, err := d.dht.SearchValue(ctx, ipns.RecordKey(peer.ID(id)))
+	defer cancel()
+
+	addr, err := d.pr.FindPeer(ctx, pid)
 	if err != nil {
-		cancel()
 		return nil, err
 	}
 
-	ch := make(chan drc.GetIPNSAsyncResult)
+	rec := &types.PeerRecord{
+		Schema: types.SchemaPeer,
+		ID:     &addr.ID,
+	}
 
-	go func() {
-		defer close(ch)
-		defer cancel()
-		for r := range recs {
-			next := drc.GetIPNSAsyncResult{
-				Record: r,
-				Err:    nil,
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case ch <- next:
-			}
-		}
-	}()
-	return ch, nil
+	for _, addr := range addr.Addrs {
+		rec.Addrs = append(rec.Addrs, types.Multiaddr{Multiaddr: addr})
+	}
+
+	return iter.ToResultIter[types.Record](iter.FromSlice[types.Record]([]types.Record{rec})), nil
 }
 
-func (d *delegatedRoutingProxy) PutIPNS(ctx context.Context, id []byte, record []byte) (<-chan drc.PutIPNSAsyncResult, error) {
+func (d *delegatedRoutingProxy) GetIPNS(ctx context.Context, name ipns.Name) (*ipns.Record, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	err := d.dht.PutValue(ctx, ipns.RecordKey(peer.ID(id)), record)
-	ch := make(chan drc.PutIPNSAsyncResult, 1)
-	ch <- drc.PutIPNSAsyncResult{Err: err}
-	close(ch)
-	return ch, nil
+
+	raw, err := d.vs.GetValue(ctx, string(name.RoutingKey()))
+	if err != nil {
+		return nil, err
+	}
+
+	return ipns.UnmarshalRecord(raw)
 }
 
-var _ drs.DelegatedRoutingService = (*delegatedRoutingProxy)(nil)
+func (d *delegatedRoutingProxy) PutIPNS(ctx context.Context, name ipns.Name, record *ipns.Record) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-type contentRoutingIndexerWrapper struct {
-	indexer *drc.ContentRoutingClient
+	raw, err := ipns.MarshalRecord(record)
+	if err != nil {
+		return err
+	}
+
+	return d.vs.PutValue(ctx, string(name.RoutingKey()), raw)
 }
 
-func (c *contentRoutingIndexerWrapper) Provide(ctx context.Context, c2 cid.Cid, b bool) error {
-	return routing.ErrNotSupported
+type peerChanIter struct {
+	ch     <-chan peer.AddrInfo
+	cancel context.CancelFunc
+	next   *peer.AddrInfo
 }
 
-func (c *contentRoutingIndexerWrapper) FindProvidersAsync(ctx context.Context, c2 cid.Cid, i int) <-chan peer.AddrInfo {
-	return c.indexer.FindProvidersAsync(ctx, c2, i)
+func (it *peerChanIter) Next() bool {
+	addr, ok := <-it.ch
+	if ok {
+		it.next = &addr
+		return true
+	}
+	it.next = nil
+	return false
 }
 
-func (c *contentRoutingIndexerWrapper) FindPeer(ctx context.Context, id peer.ID) (peer.AddrInfo, error) {
-	return peer.AddrInfo{}, routing.ErrNotSupported
+func (it *peerChanIter) Val() types.Record {
+	if it.next == nil {
+		return nil
+	}
+
+	rec := &types.PeerRecord{
+		Schema: types.SchemaPeer,
+		ID:     &it.next.ID,
+	}
+
+	for _, addr := range it.next.Addrs {
+		rec.Addrs = append(rec.Addrs, types.Multiaddr{Multiaddr: addr})
+	}
+
+	return rec
 }
 
-func (c *contentRoutingIndexerWrapper) PutValue(ctx context.Context, s string, bytes []byte, option ...routing.Option) error {
-	return routing.ErrNotSupported
+func (it *peerChanIter) Close() error {
+	it.cancel()
+	return nil
 }
-
-func (c *contentRoutingIndexerWrapper) GetValue(ctx context.Context, s string, option ...routing.Option) ([]byte, error) {
-	return nil, routing.ErrNotSupported
-}
-
-func (c *contentRoutingIndexerWrapper) SearchValue(ctx context.Context, s string, option ...routing.Option) (<-chan []byte, error) {
-	return nil, routing.ErrNotSupported
-}
-
-func (c *contentRoutingIndexerWrapper) Bootstrap(ctx context.Context) error {
-	return routing.ErrNotSupported
-}
-
-var _ routing.Routing = (*contentRoutingIndexerWrapper)(nil)
