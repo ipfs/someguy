@@ -244,7 +244,7 @@ func (d *delegatedRoutingProxy) ProvideBitswap(ctx context.Context, req *server.
 	return 0, routing.ErrNotSupported
 }
 
-func (d *delegatedRoutingProxy) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[types.Record], error) {
+func (d *delegatedRoutingProxy) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -262,7 +262,7 @@ func (d *delegatedRoutingProxy) FindPeers(ctx context.Context, pid peer.ID, limi
 		rec.Addrs = append(rec.Addrs, types.Multiaddr{Multiaddr: addr})
 	}
 
-	return iter.ToResultIter[types.Record](iter.FromSlice[types.Record]([]types.Record{rec})), nil
+	return iter.ToResultIter[*types.PeerRecord](iter.FromSlice[*types.PeerRecord]([]*types.PeerRecord{rec})), nil
 }
 
 func (d *delegatedRoutingProxy) GetIPNS(ctx context.Context, name ipns.Name) (*ipns.Record, error) {
