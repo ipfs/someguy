@@ -240,6 +240,7 @@ func (d *delegatedRoutingProxy) FindProviders(ctx context.Context, key cid.Cid, 
 	}), nil
 }
 
+//lint:ignore SA1019 // ignore staticcheck
 func (d *delegatedRoutingProxy) ProvideBitswap(ctx context.Context, req *server.BitswapWriteProvideRequest) (time.Duration, error) {
 	return 0, routing.ErrNotSupported
 }

@@ -48,7 +48,9 @@ func findProviders(ctx context.Context, key cid.Cid, endpoint string, prettyOutp
 				fmt.Fprintln(os.Stdout, "\tProtocols:", record.Protocols)
 				fmt.Fprintln(os.Stdout, "\tAddresses:", record.Addrs)
 
+				//lint:ignore SA1019 // ignore staticcheck
 			case types.SchemaBitswap:
+				//lint:ignore SA1019 // ignore staticcheck
 				record := res.Val.(*types.BitswapRecord)
 				fmt.Fprintln(os.Stdout, record.ID)
 				fmt.Fprintln(os.Stdout, "\tProtocol:", record.Protocol)
