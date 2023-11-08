@@ -1,6 +1,6 @@
 module github.com/ipfs-shipyard/someguy
 
-go 1.20
+go 1.21
 
 require (
 	github.com/ipfs/boxo v0.15.0
