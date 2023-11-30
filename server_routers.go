@@ -52,27 +52,49 @@ type parallelRouter struct {
 }
 
 func (r parallelRouter) FindProviders(ctx context.Context, key cid.Cid, limit int) (iter.ResultIter[types.Record], error) {
-	switch len(r.routers) {
+	return find(r.routers, func(ri server.ContentRouter) (iter.ResultIter[types.Record], error) {
+		return ri.FindProviders(ctx, key, limit)
+	})
+}
+
+//lint:ignore SA1019 // ignore staticcheck
+func (r parallelRouter) ProvideBitswap(ctx context.Context, req *server.BitswapWriteProvideRequest) (time.Duration, error) {
+	return 0, routing.ErrNotSupported
+}
+
+func (r parallelRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
+	return find(r.routers, func(ri server.ContentRouter) (iter.ResultIter[*types.PeerRecord], error) {
+		return ri.FindPeers(ctx, pid, limit)
+	})
+}
+
+func find[T any](routers []server.ContentRouter, call func(server.ContentRouter) (iter.ResultIter[T], error)) (iter.ResultIter[T], error) {
+	switch len(routers) {
 	case 0:
-		return iter.ToResultIter(iter.FromSlice([]types.Record{})), nil
+		return iter.ToResultIter(iter.FromSlice([]T{})), nil
 	case 1:
-		return r.routers[0].FindProviders(ctx, key, limit)
+		return call(routers[0])
 	}
 
-	its := make([]iter.ResultIter[types.Record], len(r.routers))
-	for i, ri := range r.routers {
-		var err error
-		its[i], err = ri.FindProviders(ctx, key, limit)
-		if err != nil {
-			for _, it := range its {
-				if it != nil {
-					_ = it.Close()
-				}
-			}
-			return nil, err
+	its := make([]iter.ResultIter[T], 0, len(routers))
+	var err error
+	for _, ri := range routers {
+		it, itErr := call(ri)
+
+		if itErr != nil {
+			err = errors.Join(err, itErr)
+		} else {
+			its = append(its, it)
 		}
 	}
-	return &manyIter[types.Record]{it: its}, nil
+
+	// If all iterators failed to be created, then return the error.
+	if len(its) == 0 {
+		return nil, err
+	}
+
+	// Otherwise return manyIter with remaining iterators.
+	return &manyIter[T]{it: its}, nil
 }
 
 type manyIter[T any] struct {
@@ -105,35 +127,6 @@ func (mi *manyIter[T]) Close() error {
 		err = errors.Join(err, it.Close())
 	}
 	return err
-}
-
-//lint:ignore SA1019 // ignore staticcheck
-func (r parallelRouter) ProvideBitswap(ctx context.Context, req *server.BitswapWriteProvideRequest) (time.Duration, error) {
-	return 0, routing.ErrNotSupported
-}
-
-func (r parallelRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
-	switch len(r.routers) {
-	case 0:
-		return iter.ToResultIter(iter.FromSlice([]*types.PeerRecord{})), nil
-	case 1:
-		return r.routers[0].FindPeers(ctx, pid, limit)
-	}
-
-	its := make([]iter.ResultIter[*types.PeerRecord], len(r.routers))
-	for i, ri := range r.routers {
-		var err error
-		its[i], err = ri.FindPeers(ctx, pid, limit)
-		if err != nil {
-			for _, it := range its {
-				if it != nil {
-					_ = it.Close()
-				}
-			}
-			return nil, err
-		}
-	}
-	return &manyIter[*types.PeerRecord]{it: its}, nil
 }
 
 func (r parallelRouter) GetIPNS(ctx context.Context, name ipns.Name) (*ipns.Record, error) {
