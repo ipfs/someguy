@@ -96,22 +96,22 @@ func newHost(highOutboundLimits bool) (host.Host, error) {
 	return h, nil
 }
 
-func getCombinedRouting(endpoints []string, dht routing.Routing) (server.ContentRouter, error) {
+func getCombinedRouting(endpoints []string, dht routing.Routing) (router, error) {
 	if len(endpoints) == 0 {
-		return dhtRouter{dht: dht}, nil
+		return libp2pRouter{routing: dht}, nil
 	}
 
-	var routers []server.ContentRouter
+	var routers []router
 
 	for _, endpoint := range endpoints {
 		drclient, err := client.New(endpoint)
 		if err != nil {
 			return nil, err
 		}
-		routers = append(routers, wrappedClient{Client: drclient})
+		routers = append(routers, clientRouter{Client: drclient})
 	}
 
 	return parallelRouter{
-		routers: append(routers, dhtRouter{dht: dht}),
+		routers: append(routers, libp2pRouter{routing: dht}),
 	}, nil
 }

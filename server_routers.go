@@ -16,16 +16,59 @@ import (
 	"github.com/libp2p/go-libp2p/core/routing"
 )
 
+type router interface {
+	providersRouter
+	peersRouter
+	ipnsRouter
+}
+
+type providersRouter interface {
+	FindProviders(ctx context.Context, cid cid.Cid, limit int) (iter.ResultIter[types.Record], error)
+}
+
+type peersRouter interface {
+	FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error)
+}
+
+type ipnsRouter interface {
+	GetIPNS(ctx context.Context, name ipns.Name) (*ipns.Record, error)
+	PutIPNS(ctx context.Context, name ipns.Name, record *ipns.Record) error
+}
+
 var _ server.ContentRouter = composableRouter{}
 
 type composableRouter struct {
-	providers server.ContentRouter
-	peers     server.ContentRouter
-	ipns      server.ContentRouter
+	providers providersRouter
+	peers     peersRouter
+	ipns      ipnsRouter
 }
 
 func (r composableRouter) FindProviders(ctx context.Context, key cid.Cid, limit int) (iter.ResultIter[types.Record], error) {
+	if r.providers == nil {
+		return iter.ToResultIter(iter.FromSlice([]types.Record{})), nil
+	}
 	return r.providers.FindProviders(ctx, key, limit)
+}
+
+func (r composableRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
+	if r.peers == nil {
+		return iter.ToResultIter(iter.FromSlice([]*types.PeerRecord{})), nil
+	}
+	return r.peers.FindPeers(ctx, pid, limit)
+}
+
+func (r composableRouter) GetIPNS(ctx context.Context, name ipns.Name) (*ipns.Record, error) {
+	if r.ipns == nil {
+		return nil, routing.ErrNotFound
+	}
+	return r.ipns.GetIPNS(ctx, name)
+}
+
+func (r composableRouter) PutIPNS(ctx context.Context, name ipns.Name, record *ipns.Record) error {
+	if r.ipns == nil {
+		return nil
+	}
+	return r.ipns.PutIPNS(ctx, name, record)
 }
 
 //lint:ignore SA1019 // ignore staticcheck
@@ -33,42 +76,25 @@ func (r composableRouter) ProvideBitswap(ctx context.Context, req *server.Bitswa
 	return 0, routing.ErrNotSupported
 }
 
-func (r composableRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
-	return r.providers.FindPeers(ctx, pid, limit)
-}
-
-func (r composableRouter) GetIPNS(ctx context.Context, name ipns.Name) (*ipns.Record, error) {
-	return r.ipns.GetIPNS(ctx, name)
-}
-
-func (r composableRouter) PutIPNS(ctx context.Context, name ipns.Name, record *ipns.Record) error {
-	return r.ipns.PutIPNS(ctx, name, record)
-}
-
 var _ server.ContentRouter = parallelRouter{}
 
 type parallelRouter struct {
-	routers []server.ContentRouter
+	routers []router
 }
 
 func (r parallelRouter) FindProviders(ctx context.Context, key cid.Cid, limit int) (iter.ResultIter[types.Record], error) {
-	return find(ctx, r.routers, func(ri server.ContentRouter) (iter.ResultIter[types.Record], error) {
+	return find(ctx, r.routers, func(ri router) (iter.ResultIter[types.Record], error) {
 		return ri.FindProviders(ctx, key, limit)
 	})
 }
 
-//lint:ignore SA1019 // ignore staticcheck
-func (r parallelRouter) ProvideBitswap(ctx context.Context, req *server.BitswapWriteProvideRequest) (time.Duration, error) {
-	return 0, routing.ErrNotSupported
-}
-
 func (r parallelRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
-	return find(ctx, r.routers, func(ri server.ContentRouter) (iter.ResultIter[*types.PeerRecord], error) {
+	return find(ctx, r.routers, func(ri router) (iter.ResultIter[*types.PeerRecord], error) {
 		return ri.FindPeers(ctx, pid, limit)
 	})
 }
 
-func find[T any](ctx context.Context, routers []server.ContentRouter, call func(server.ContentRouter) (iter.ResultIter[T], error)) (iter.ResultIter[T], error) {
+func find[T any](ctx context.Context, routers []router, call func(router) (iter.ResultIter[T], error)) (iter.ResultIter[T], error) {
 	switch len(routers) {
 	case 0:
 		return iter.ToResultIter(iter.FromSlice([]T{})), nil
@@ -165,7 +191,7 @@ func (r parallelRouter) GetIPNS(ctx context.Context, name ipns.Name) (*ipns.Reco
 		err error
 	})
 	for _, ri := range r.routers {
-		go func(ri server.ContentRouter) {
+		go func(ri router) {
 			value, err := ri.GetIPNS(ctx, name)
 			select {
 			case results <- struct {
@@ -225,7 +251,7 @@ func (r parallelRouter) PutIPNS(ctx context.Context, name ipns.Name, record *ipn
 	results := make([]error, len(r.routers))
 	wg.Add(len(r.routers))
 	for i, ri := range r.routers {
-		go func(ri server.ContentRouter, i int) {
+		go func(ri router, i int) {
 			results[i] = ri.PutIPNS(ctx, name, record)
 			wg.Done()
 		}(ri, i)
@@ -239,26 +265,31 @@ func (r parallelRouter) PutIPNS(ctx context.Context, name ipns.Name, record *ipn
 	return errs
 }
 
-var _ server.ContentRouter = dhtRouter{}
-
-type dhtRouter struct {
-	dht routing.Routing
+//lint:ignore SA1019 // ignore staticcheck
+func (r parallelRouter) ProvideBitswap(ctx context.Context, req *server.BitswapWriteProvideRequest) (time.Duration, error) {
+	return 0, routing.ErrNotSupported
 }
 
-func (d dhtRouter) FindProviders(ctx context.Context, key cid.Cid, limit int) (iter.ResultIter[types.Record], error) {
+var _ router = libp2pRouter{}
+
+type libp2pRouter struct {
+	routing routing.Routing
+}
+
+func (d libp2pRouter) FindProviders(ctx context.Context, key cid.Cid, limit int) (iter.ResultIter[types.Record], error) {
 	ctx, cancel := context.WithCancel(ctx)
-	ch := d.dht.FindProvidersAsync(ctx, key, limit)
+	ch := d.routing.FindProvidersAsync(ctx, key, limit)
 	return iter.ToResultIter[types.Record](&peerChanIter{
 		ch:     ch,
 		cancel: cancel,
 	}), nil
 }
 
-func (d dhtRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
+func (d libp2pRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	addr, err := d.dht.FindPeer(ctx, pid)
+	addr, err := d.routing.FindPeer(ctx, pid)
 	if err != nil {
 		return nil, err
 	}
@@ -275,11 +306,11 @@ func (d dhtRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.
 	return iter.ToResultIter[*types.PeerRecord](iter.FromSlice[*types.PeerRecord]([]*types.PeerRecord{rec})), nil
 }
 
-func (d dhtRouter) GetIPNS(ctx context.Context, name ipns.Name) (*ipns.Record, error) {
+func (d libp2pRouter) GetIPNS(ctx context.Context, name ipns.Name) (*ipns.Record, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	raw, err := d.dht.GetValue(ctx, string(name.RoutingKey()))
+	raw, err := d.routing.GetValue(ctx, string(name.RoutingKey()))
 	if err != nil {
 		return nil, err
 	}
@@ -287,7 +318,7 @@ func (d dhtRouter) GetIPNS(ctx context.Context, name ipns.Name) (*ipns.Record, e
 	return ipns.UnmarshalRecord(raw)
 }
 
-func (d dhtRouter) PutIPNS(ctx context.Context, name ipns.Name, record *ipns.Record) error {
+func (d libp2pRouter) PutIPNS(ctx context.Context, name ipns.Name, record *ipns.Record) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -296,12 +327,7 @@ func (d dhtRouter) PutIPNS(ctx context.Context, name ipns.Name, record *ipns.Rec
 		return err
 	}
 
-	return d.dht.PutValue(ctx, string(name.RoutingKey()), raw)
-}
-
-//lint:ignore SA1019 // ignore staticcheck
-func (d dhtRouter) ProvideBitswap(ctx context.Context, req *server.BitswapWriteProvideRequest) (time.Duration, error) {
-	return 0, routing.ErrNotSupported
+	return d.routing.PutValue(ctx, string(name.RoutingKey()), raw)
 }
 
 type peerChanIter struct {
@@ -342,21 +368,16 @@ func (it *peerChanIter) Close() error {
 	return nil
 }
 
-var _ server.ContentRouter = wrappedClient{}
+var _ router = clientRouter{}
 
-type wrappedClient struct {
+type clientRouter struct {
 	*client.Client
 }
 
-func (d wrappedClient) FindProviders(ctx context.Context, cid cid.Cid, limit int) (iter.ResultIter[types.Record], error) {
+func (d clientRouter) FindProviders(ctx context.Context, cid cid.Cid, limit int) (iter.ResultIter[types.Record], error) {
 	return d.Client.FindProviders(ctx, cid)
 }
 
-func (d wrappedClient) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
+func (d clientRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
 	return d.Client.FindPeers(ctx, pid)
-}
-
-//lint:ignore SA1019 // ignore staticcheck
-func (d wrappedClient) ProvideBitswap(ctx context.Context, req *server.BitswapWriteProvideRequest) (time.Duration, error) {
-	return 0, routing.ErrNotSupported
 }
