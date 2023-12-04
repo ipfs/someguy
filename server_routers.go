@@ -124,50 +124,69 @@ func find[T any](ctx context.Context, routers []router, call func(router) (iter.
 }
 
 type manyIter[T any] struct {
-	ctx    context.Context
-	its    []iter.ResultIter[T]
-	nextCh chan int
-	next   int
+	ctx  context.Context
+	wg   sync.WaitGroup
+	its  []iter.ResultIter[T]
+	ch   chan iter.Result[T]
+	val  iter.Result[T]
+	done bool
 }
 
 func newManyIter[T any](ctx context.Context, its []iter.ResultIter[T]) *manyIter[T] {
-	nextCh := make(chan int)
+	mi := &manyIter[T]{
+		ctx: ctx,
+		its: its,
+		ch:  make(chan iter.Result[T]),
+	}
 
-	for i, it := range its {
-		go func(ch chan int, it iter.ResultIter[T], index int) {
+	for _, it := range its {
+		mi.wg.Add(1)
+		go func(it iter.ResultIter[T]) {
+			defer mi.wg.Done()
 			for it.Next() {
-				ch <- index
+				select {
+				case mi.ch <- it.Val():
+				case <-ctx.Done():
+					return
+				}
 			}
-		}(nextCh, it, i)
+		}(it)
 	}
 
-	return &manyIter[T]{
-		ctx:    ctx,
-		its:    its,
-		nextCh: nextCh,
-		next:   -1,
-	}
+	go func() {
+		mi.wg.Wait()
+		close(mi.ch)
+	}()
+
+	return mi
 }
 
 func (mi *manyIter[T]) Next() bool {
-	select {
-	case i := <-mi.nextCh:
-		mi.next = i
-		return true
-	case <-mi.ctx.Done():
-		mi.next = -1
+	if mi.done {
 		return false
 	}
+
+	select {
+	case val, ok := <-mi.ch:
+		if ok {
+			mi.val = val
+		} else {
+			mi.done = true
+		}
+	case <-mi.ctx.Done():
+		mi.done = true
+	}
+
+	return !mi.done
 }
 
 func (mi *manyIter[T]) Val() iter.Result[T] {
-	if mi.next == -1 {
-		return iter.Result[T]{Err: errors.New("no next value")}
-	}
-	return mi.its[mi.next].Val()
+	return mi.val
 }
 
 func (mi *manyIter[T]) Close() error {
+	mi.done = true
+	mi.wg.Wait()
 	var err error
 	for _, it := range mi.its {
 		err = errors.Join(err, it.Close())
