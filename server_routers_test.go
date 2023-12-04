@@ -15,7 +15,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/routing"
-	mh "github.com/multiformats/go-multihash"
+	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -264,14 +264,27 @@ func TestPutIPNS(t *testing.T) {
 	})
 }
 
+func makeCID() cid.Cid {
+	buf := make([]byte, 63)
+	_, err := rand.Read(buf)
+	if err != nil {
+		panic(err)
+	}
+	mh, err := multihash.Encode(buf, multihash.SHA2_256)
+	if err != nil {
+		panic(err)
+	}
+	c := cid.NewCidV1(cid.Raw, mh)
+	return c
+}
+
 func TestFindProviders(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Basic", func(t *testing.T) {
-		prefix := cid.NewPrefixV1(cid.Raw, mh.SHA2_256)
-		c, _ := prefix.Sum([]byte("foo"))
-
 		ctx := context.Background()
+		c := makeCID()
+		peers := []peer.ID{"peer1", "peer2", "peer3"}
 
 		d := parallelRouter{}
 		it, err := d.FindProviders(ctx, c, 10)
@@ -280,19 +293,180 @@ func TestFindProviders(t *testing.T) {
 		require.False(t, it.Next())
 
 		mr1 := &mockRouter{}
-		mr1.On("FindProviders", mock.Anything, c, 10).Return(iter.ToResultIter(iter.FromSlice([]types.Record{})), nil)
+		mr1Iter := newMockIter[types.Record](ctx)
+		mr1.On("FindProviders", mock.Anything, c, 10).Return(mr1Iter, nil)
+
+		mr2 := &mockRouter{}
+		mr2Iter := newMockIter[types.Record](ctx)
+		mr2.On("FindProviders", mock.Anything, c, 10).Return(mr2Iter, nil)
 
 		d = parallelRouter{
 			routers: []router{
 				&composableRouter{
 					providers: mr1,
 				},
+				mr2,
 			},
 		}
 
+		go func() {
+			mr1Iter.ch <- iter.Result[types.Record]{Val: &types.PeerRecord{Schema: "peer", ID: &peers[0]}}
+			mr2Iter.ch <- iter.Result[types.Record]{Val: &types.PeerRecord{Schema: "peer", ID: &peers[0]}}
+			mr1Iter.ch <- iter.Result[types.Record]{Val: &types.PeerRecord{Schema: "peer", ID: &peers[1]}}
+			mr1Iter.ch <- iter.Result[types.Record]{Val: &types.PeerRecord{Schema: "peer", ID: &peers[2]}}
+			close(mr1Iter.ch)
+
+			mr2Iter.ch <- iter.Result[types.Record]{Val: &types.PeerRecord{Schema: "peer", ID: &peers[1]}}
+			close(mr2Iter.ch)
+		}()
+
 		it, err = d.FindProviders(ctx, c, 10)
 		require.NoError(t, err)
+
+		results, err := iter.ReadAllResults(it)
+		require.NoError(t, err)
+		require.Len(t, results, 5)
+	})
+
+	t.Run("Failed to Create All Iterators", func(t *testing.T) {
+		ctx := context.Background()
+		c := makeCID()
+
+		mr1 := &mockRouter{}
+		mr1.On("FindProviders", mock.Anything, c, 10).Return(nil, errors.New("error a"))
+
+		mr2 := &mockRouter{}
+		mr2.On("FindProviders", mock.Anything, c, 10).Return(nil, errors.New("error b"))
+
+		d := parallelRouter{
+			routers: []router{
+				mr1, mr2,
+			},
+		}
+
+		_, err := d.FindProviders(ctx, c, 10)
+		require.ErrorContains(t, err, "error a")
+		require.ErrorContains(t, err, "error b")
+	})
+
+	t.Run("Failed to Create One Iterator", func(t *testing.T) {
+		ctx := context.Background()
+		pid := peer.ID("hello")
+		c := makeCID()
+
+		mr1 := &mockRouter{}
+		mr1.On("FindProviders", mock.Anything, c, 10).Return(iter.ToResultIter(iter.FromSlice([]types.Record{&types.PeerRecord{Schema: "peer", ID: &pid}})), nil)
+
+		mr2 := &mockRouter{}
+		mr2.On("FindProviders", mock.Anything, c, 10).Return(nil, errors.New("error b"))
+
+		d := parallelRouter{
+			routers: []router{
+				mr1, mr2,
+			},
+		}
+
+		it, err := d.FindProviders(ctx, c, 10)
+		require.NoError(t, err)
+
+		results, err := iter.ReadAllResults(it)
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+	})
+}
+
+func TestFindPeers(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Basic", func(t *testing.T) {
+		ctx := context.Background()
+		pid := peer.ID("hello")
+
+		d := parallelRouter{}
+		it, err := d.FindPeers(ctx, pid, 10)
+
+		require.NoError(t, err)
 		require.False(t, it.Next())
+
+		mr1 := &mockRouter{}
+		mr1Iter := newMockIter[*types.PeerRecord](ctx)
+		mr1.On("FindPeers", mock.Anything, pid, 10).Return(mr1Iter, nil)
+
+		mr2 := &mockRouter{}
+		mr2Iter := newMockIter[*types.PeerRecord](ctx)
+		mr2.On("FindPeers", mock.Anything, pid, 10).Return(mr2Iter, nil)
+
+		d = parallelRouter{
+			routers: []router{
+				&composableRouter{
+					peers: mr1,
+				},
+				mr2,
+			},
+		}
+
+		go func() {
+			mr1Iter.ch <- iter.Result[*types.PeerRecord]{Val: &types.PeerRecord{Schema: "peer", ID: &pid}}
+			mr2Iter.ch <- iter.Result[*types.PeerRecord]{Val: &types.PeerRecord{Schema: "peer", ID: &pid}}
+			mr1Iter.ch <- iter.Result[*types.PeerRecord]{Val: &types.PeerRecord{Schema: "peer", ID: &pid}}
+			mr1Iter.ch <- iter.Result[*types.PeerRecord]{Val: &types.PeerRecord{Schema: "peer", ID: &pid}}
+			close(mr1Iter.ch)
+
+			mr2Iter.ch <- iter.Result[*types.PeerRecord]{Val: &types.PeerRecord{Schema: "peer", ID: &pid}}
+			close(mr2Iter.ch)
+		}()
+
+		it, err = d.FindPeers(ctx, pid, 10)
+		require.NoError(t, err)
+
+		results, err := iter.ReadAllResults(it)
+		require.NoError(t, err)
+		require.Len(t, results, 5)
+	})
+
+	t.Run("Failed to Create All Iterators", func(t *testing.T) {
+		ctx := context.Background()
+		pid := peer.ID("hello")
+
+		mr1 := &mockRouter{}
+		mr1.On("FindPeers", mock.Anything, pid, 10).Return(nil, errors.New("error a"))
+
+		mr2 := &mockRouter{}
+		mr2.On("FindPeers", mock.Anything, pid, 10).Return(nil, errors.New("error b"))
+
+		d := parallelRouter{
+			routers: []router{
+				mr1, mr2,
+			},
+		}
+
+		_, err := d.FindPeers(ctx, pid, 10)
+		require.ErrorContains(t, err, "error a")
+		require.ErrorContains(t, err, "error b")
+	})
+
+	t.Run("Failed to Create One Iterator", func(t *testing.T) {
+		ctx := context.Background()
+		pid := peer.ID("hello")
+
+		mr1 := &mockRouter{}
+		mr1.On("FindPeers", mock.Anything, pid, 10).Return(iter.ToResultIter(iter.FromSlice([]*types.PeerRecord{&types.PeerRecord{Schema: "peer", ID: &pid}})), nil)
+
+		mr2 := &mockRouter{}
+		mr2.On("FindPeers", mock.Anything, pid, 10).Return(nil, errors.New("error b"))
+
+		d := parallelRouter{
+			routers: []router{
+				mr1, mr2,
+			},
+		}
+
+		it, err := d.FindPeers(ctx, pid, 10)
+		require.NoError(t, err)
+
+		results, err := iter.ReadAllResults(it)
+		require.NoError(t, err)
+		require.Len(t, results, 1)
 	})
 }
 

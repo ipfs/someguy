@@ -116,7 +116,10 @@ func find[T any](ctx context.Context, routers []router, call func(router) (iter.
 
 	// If all iterators failed to be created, then return the error.
 	if len(its) == 0 {
+		logger.Warnf("failed to create all iterators: %w", err)
 		return nil, err
+	} else if err != nil {
+		logger.Warnf("failed to create some iterators: %w", err)
 	}
 
 	// Otherwise return manyIter with remaining iterators.
@@ -190,6 +193,9 @@ func (mi *manyIter[T]) Close() error {
 	var err error
 	for _, it := range mi.its {
 		err = errors.Join(err, it.Close())
+	}
+	if err != nil {
+		logger.Warnf("errors on closing iterators: %w", err)
 	}
 	return err
 }
