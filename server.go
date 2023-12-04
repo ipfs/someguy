@@ -8,14 +8,7 @@ import (
 
 	"github.com/ipfs/boxo/routing/http/client"
 	"github.com/ipfs/boxo/routing/http/server"
-<<<<<<< HEAD
 	logging "github.com/ipfs/go-log"
-||||||| parent of 3a9d78c (feat: proxy all delegated routing)
-	"github.com/ipfs/boxo/routing/http/types"
-	"github.com/ipfs/boxo/routing/http/types/iter"
-	"github.com/ipfs/go-cid"
-=======
->>>>>>> 3a9d78c (feat: proxy all delegated routing)
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/host"
