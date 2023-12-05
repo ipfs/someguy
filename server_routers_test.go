@@ -450,7 +450,7 @@ func TestFindPeers(t *testing.T) {
 		pid := peer.ID("hello")
 
 		mr1 := &mockRouter{}
-		mr1.On("FindPeers", mock.Anything, pid, 10).Return(iter.ToResultIter(iter.FromSlice([]*types.PeerRecord{&types.PeerRecord{Schema: "peer", ID: &pid}})), nil)
+		mr1.On("FindPeers", mock.Anything, pid, 10).Return(iter.ToResultIter(iter.FromSlice([]*types.PeerRecord{{Schema: "peer", ID: &pid}})), nil)
 
 		mr2 := &mockRouter{}
 		mr2.On("FindPeers", mock.Anything, pid, 10).Return(nil, errors.New("error b"))
