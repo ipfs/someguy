@@ -6,17 +6,31 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/CAFxX/httpcompression"
+	"github.com/felixge/httpsnoop"
 	"github.com/ipfs/boxo/routing/http/client"
 	"github.com/ipfs/boxo/routing/http/server"
-	logging "github.com/ipfs/go-log"
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/routing"
 	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/rs/cors"
+	metrics "github.com/slok/go-http-metrics/metrics/prometheus"
+	"github.com/slok/go-http-metrics/middleware"
+	middlewarestd "github.com/slok/go-http-metrics/middleware/std"
 )
 
 var logger = logging.Logger("someguy")
+
+func withRequestLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		m := httpsnoop.CaptureMetrics(next, w, r)
+		logger.Debugw(r.Method, "url", r.URL, "host", r.Host, "code", m.Code, "duration", m.Duration, "written", m.Written, "ua", r.UserAgent(), "referer", r.Referer())
+	})
+}
 
 func start(ctx context.Context, port int, runAcceleratedDHTClient bool, contentEndpoints, peerEndpoints, ipnsEndpoints []string) error {
 	h, err := newHost(runAcceleratedDHTClient)
@@ -57,12 +71,40 @@ func start(ctx context.Context, port int, runAcceleratedDHTClient bool, contentE
 	log.Printf("Listening on http://0.0.0.0:%d", port)
 	log.Printf("Delegated Routing API on http://127.0.0.1:%d/routing/v1", port)
 
-	http.Handle("/", server.Handler(&composableRouter{
+	mdlw := middleware.New(middleware.Config{
+		Recorder: metrics.NewRecorder(metrics.Config{Prefix: "someguy"}),
+	})
+
+	handler := server.Handler(&composableRouter{
 		providers: crRouters,
 		peers:     prRouters,
 		ipns:      ipnsRouters,
-	}))
-	return http.ListenAndServe(":"+strconv.Itoa(port), nil)
+	})
+
+	// Add CORS.
+	handler = cors.New(cors.Options{
+		AllowedOrigins: []string{"*"},
+		AllowedMethods: []string{http.MethodGet, http.MethodOptions},
+		MaxAge:         600,
+	}).Handler(handler)
+
+	// Add compression.
+	compress, err := httpcompression.DefaultAdapter()
+	if err != nil {
+		return err
+	}
+	handler = compress(handler)
+
+	// Add metrics.
+	handler = middlewarestd.Handler("/", mdlw, handler)
+
+	// Add request logging.
+	handler = withRequestLogger(handler)
+
+	http.Handle("/debug/metrics/prometheus", promhttp.Handler())
+	http.Handle("/", handler)
+	server := &http.Server{Addr: ":" + strconv.Itoa(port), Handler: nil}
+	return server.ListenAndServe()
 }
 
 func newHost(highOutboundLimits bool) (host.Host, error) {
