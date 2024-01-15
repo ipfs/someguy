@@ -108,6 +108,7 @@ func find[T any](ctx context.Context, routers []router, call func(router) (iter.
 		it, itErr := call(ri)
 
 		if itErr != nil {
+			logger.Warnf("error from router: %w", itErr)
 			err = errors.Join(err, itErr)
 		} else {
 			its = append(its, it)
@@ -127,19 +128,23 @@ func find[T any](ctx context.Context, routers []router, call func(router) (iter.
 }
 
 type manyIter[T any] struct {
-	ctx  context.Context
-	wg   sync.WaitGroup
-	its  []iter.ResultIter[T]
-	ch   chan iter.Result[T]
-	val  iter.Result[T]
-	done bool
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+	its    []iter.ResultIter[T]
+	ch     chan iter.Result[T]
+	val    iter.Result[T]
+	done   bool
 }
 
 func newManyIter[T any](ctx context.Context, its []iter.ResultIter[T]) *manyIter[T] {
+	ctx, cancel := context.WithCancel(ctx)
+
 	mi := &manyIter[T]{
-		ctx: ctx,
-		its: its,
-		ch:  make(chan iter.Result[T]),
+		ctx:    ctx,
+		cancel: cancel,
+		its:    its,
+		ch:     make(chan iter.Result[T]),
 	}
 
 	for _, it := range its {
@@ -189,6 +194,7 @@ func (mi *manyIter[T]) Val() iter.Result[T] {
 
 func (mi *manyIter[T]) Close() error {
 	mi.done = true
+	mi.cancel()
 	mi.wg.Wait()
 	var err error
 	for _, it := range mi.its {
