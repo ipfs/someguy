@@ -85,7 +85,7 @@ func start(ctx context.Context, port int, runAcceleratedDHTClient bool, contentE
 	handler = cors.New(cors.Options{
 		AllowedOrigins: []string{"*"},
 		AllowedMethods: []string{http.MethodGet, http.MethodOptions},
-		MaxAge:         600,
+		MaxAge:         86400,
 	}).Handler(handler)
 
 	// Add compression.
