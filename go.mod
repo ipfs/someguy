@@ -1,4 +1,4 @@
-module github.com/ipfs-shipyard/someguy
+module github.com/ipfs/someguy
 
 go 1.21
 
