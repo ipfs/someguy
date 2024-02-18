@@ -8,6 +8,27 @@ A [Delegated Routing V1](https://specs.ipfs.tech/routing/http-routing-v1/) serve
 go install github.com/ipfs/someguy@latest
 ```
 
+### Docker
+
+Automated Docker container releases are available from the [Github container registry](https://github.com/ipfs/someguy/pkgs/container/someguy):
+
+- 🟢 Releases
+  - `latest` always points at the latest stable release
+  - `vN.N.N` point at a specific [release tag](https://github.com/ipfs/someguy/releases)
+- 🟠 Unreleased developer builds
+  - `main-latest` always points at the `HEAD` of the `main` branch
+  - `main-YYYY-DD-MM-GITSHA` points at a specific commit from the `main` branch
+- ⚠️ Experimental, unstable builds
+  - `staging-latest` always points at the `HEAD` of the `staging` branch
+  - `staging-YYYY-DD-MM-GITSHA` points at a specific commit from the `staging` branch
+  - This tag is used by developers for internal testing, not intended for end users
+
+When using Docker, make sure to pass necessary config via `-e`:
+```console
+$ docker pull ghcr.io/ipfs/someguy:main-latest
+$ docker run --rm -it --net=host -e ghcr.io/ipfs/someguy:main-latest
+```
+
 ## Build
 
 ```bash
