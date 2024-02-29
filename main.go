@@ -23,29 +23,34 @@ func main() {
 				Name: "start",
 				Flags: []cli.Flag{
 					&cli.IntFlag{
-						Name:  "port",
-						Usage: "port to serve requests on",
-						Value: 8080,
+						Name:    "port",
+						Value:   8080,
+						EnvVars: []string{"SOMEGUY_PORT"},
+						Usage:   "port to serve requests on",
 					},
 					&cli.BoolFlag{
-						Name:  "accelerated-dht",
-						Usage: "run the accelerated DHT client",
-						Value: true,
+						Name:    "accelerated-dht",
+						Value:   true,
+						EnvVars: []string{"SOMEGUY_ACCELERATED_DHT"},
+						Usage:   "run the accelerated DHT client",
 					},
 					&cli.StringSliceFlag{
-						Name:  "provider-endpoints",
-						Usage: "other Delegated Routing V1 endpoints to proxy provider requests to",
-						Value: cli.NewStringSlice(cidContactEndpoint),
+						Name:    "provider-endpoints",
+						Value:   cli.NewStringSlice(cidContactEndpoint),
+						EnvVars: []string{"SOMEGUY_PROVIDER_ENDPOINTS"},
+						Usage:   "other Delegated Routing V1 endpoints to proxy provider requests to",
 					},
 					&cli.StringSliceFlag{
-						Name:  "peer-endpoints",
-						Usage: "other Delegated Routing V1 endpoints to proxy peer requests to",
-						Value: cli.NewStringSlice(),
+						Name:    "peer-endpoints",
+						Value:   cli.NewStringSlice(),
+						EnvVars: []string{"SOMEGUY_PEER_ENDPOINTS"},
+						Usage:   "other Delegated Routing V1 endpoints to proxy peer requests to",
 					},
 					&cli.StringSliceFlag{
-						Name:  "ipns-endpoints",
-						Usage: "other Delegated Routing V1 endpoints to proxy IPNS requests to",
-						Value: cli.NewStringSlice(),
+						Name:    "ipns-endpoints",
+						Value:   cli.NewStringSlice(),
+						EnvVars: []string{"SOMEGUY_IPNS_ENDPOINTS"},
+						Usage:   "other Delegated Routing V1 endpoints to proxy IPNS requests to",
 					},
 				},
 				Action: func(ctx *cli.Context) error {
@@ -57,13 +62,13 @@ func main() {
 				Flags: []cli.Flag{
 					&cli.StringFlag{
 						Name:  "endpoint",
-						Usage: "the Delegated Routing V1 endpoint to ask",
 						Value: cidContactEndpoint,
+						Usage: "the Delegated Routing V1 endpoint to ask",
 					},
 					&cli.BoolFlag{
 						Name:  "pretty",
-						Usage: "output data in a prettier format that may convey less information",
 						Value: false,
+						Usage: "output data in a prettier format that may convey less information",
 					},
 				},
 				Subcommands: []*cli.Command{

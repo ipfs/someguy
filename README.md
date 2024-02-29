@@ -29,6 +29,8 @@ $ docker pull ghcr.io/ipfs/someguy:main-latest
 $ docker run --rm -it --net=host -e ghcr.io/ipfs/someguy:main-latest
 ```
 
+See [`/docs/environment-variables.md`](./docs/environment-variables.md).
+
 ## Build
 
 ```bash
