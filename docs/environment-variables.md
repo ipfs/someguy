@@ -32,19 +32,19 @@ Default: `true`
 
 Comma-separated list of other Delegated Routing V1 endpoints to proxy provider requests to.
 
-Default: `https://cid.contact`
+Default: `https://cid.contact,https://delegated-ipfs.dev`
 
 ### `SOMEGUY_PEER_ENDPOINTS`
 
 Comma-separated list of other Delegated Routing V1 endpoints to proxy peer requests to.
 
-Default: none
+Default: `https://delegated-ipfs.dev`
 
 ### `SOMEGUY_IPNS_ENDPOINTS`
 
 Comma-separated list of other Delegated Routing V1 endpoints to proxy IPNS requests to.
 
-Default: none
+Default: `https://delegated-ipfs.dev`
 
 ## Logging
 

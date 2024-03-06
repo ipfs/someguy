@@ -12,7 +12,10 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-const cidContactEndpoint = "https://cid.contact"
+const (
+	cidContactEndpoint    = "https://cid.contact"
+	delegatedIpfsEndpoint = "https://delegated-ipfs.dev"
+)
 
 func main() {
 	app := &cli.App{
@@ -36,19 +39,19 @@ func main() {
 					},
 					&cli.StringSliceFlag{
 						Name:    "provider-endpoints",
-						Value:   cli.NewStringSlice(cidContactEndpoint),
+						Value:   cli.NewStringSlice(cidContactEndpoint, delegatedIpfsEndpoint),
 						EnvVars: []string{"SOMEGUY_PROVIDER_ENDPOINTS"},
 						Usage:   "other Delegated Routing V1 endpoints to proxy provider requests to",
 					},
 					&cli.StringSliceFlag{
 						Name:    "peer-endpoints",
-						Value:   cli.NewStringSlice(),
+						Value:   cli.NewStringSlice(delegatedIpfsEndpoint),
 						EnvVars: []string{"SOMEGUY_PEER_ENDPOINTS"},
 						Usage:   "other Delegated Routing V1 endpoints to proxy peer requests to",
 					},
 					&cli.StringSliceFlag{
 						Name:    "ipns-endpoints",
-						Value:   cli.NewStringSlice(),
+						Value:   cli.NewStringSlice(delegatedIpfsEndpoint),
 						EnvVars: []string{"SOMEGUY_IPNS_ENDPOINTS"},
 						Usage:   "other Delegated Routing V1 endpoints to proxy IPNS requests to",
 					},
@@ -62,7 +65,7 @@ func main() {
 				Flags: []cli.Flag{
 					&cli.StringFlag{
 						Name:  "endpoint",
-						Value: cidContactEndpoint,
+						Value: delegatedIpfsEndpoint,
 						Usage: "the Delegated Routing V1 endpoint to ask",
 					},
 					&cli.BoolFlag{

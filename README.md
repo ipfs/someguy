@@ -51,13 +51,13 @@ You can use `someguy` as a client, or as a server.
 
 ### Server
 
-You can start the server with `someguy start`. This will, by default, run a Delegated Routing V1 server that proxies requests to the [IPFS Amino DHT](https://blog.ipfs.tech/2023-09-amino-refactoring/) and the [cid.contact](https://cid.contact) indexer (IPNI) node.
+You can start the server with `someguy start`. This will, by default, run a Delegated Routing V1 server that proxies requests to the [IPFS Amino DHT](https://blog.ipfs.tech/2023-09-amino-refactoring/), [delegated-ipfs.dev](https://delegated-ipfs.dev) and [cid.contact](https://cid.contact).
 
 For more details run `someguy start --help`.
 
 ### Client
 
-If you don't want to run a server yourself, but want to query some other server, you can run `someguy ask` and choose any of the subcommands and ask for a provider, a peer, or even an IPNS record.
+If you don't want to run a server yourself, but want to query some other server, you can run `someguy ask` and choose any of the subcommands and ask for a provider, a peer, or even an IPNS record. By default, [delegated-ipfs.dev](https://delegated-ipfs.dev) is the server used.
 
 For more details run `someguy ask --help`.
 
