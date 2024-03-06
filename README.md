@@ -1,6 +1,20 @@
-# someguy
+# 🤷 Someguy
+
+[![Official Part of IPFS Project](https://img.shields.io/badge/project-IPFS-blue.svg?style=flat-square)](https://ipfs.tech)
+[![Discourse Forum](https://img.shields.io/discourse/posts?server=https%3A%2F%2Fdiscuss.ipfs.tech)](https://discuss.ipfs.tech)
+[![Matrix](https://img.shields.io/matrix/ipfs-space%3Aipfs.io?server_fqdn=matrix.org)](https://matrix.to/#/#ipfs-space:ipfs.io)
+[![CI](https://img.shields.io/github/actions/workflow/status/ipfs/someguy/go-test.yml?branch=main)](https://github.com/ipfs/someguy/actions)
+[![Code Coverage](https://codecov.io/gh/ipfs/someguy/branch/main/graph/badge.svg?token=9eG7d8fbCB)](https://codecov.io/gh/ipfs/someguy)
+[![GitHub Release](https://img.shields.io/github/v/release/ipfs/someguy?filter=!*rc*)](https://github.com/ipfs/someguy/releases)
+[![Go Reference](https://pkg.go.dev/badge/github.com/ipfs/someguy.svg)](https://pkg.go.dev/github.com/ipfs/someguy)
 
 A [Delegated Routing V1](https://specs.ipfs.tech/routing/http-routing-v1/) server and proxy for all your routing needs. Ask `someguy` for directions.
+
+## Build
+
+```bash
+go build -o someguy
+```
 
 ## Install
 
@@ -31,22 +45,30 @@ $ docker run --rm -it --net=host -e ghcr.io/ipfs/someguy:main-latest
 
 See [`/docs/environment-variables.md`](./docs/environment-variables.md).
 
-## Build
-
-```bash
-go build -o someguy
-```
-
 ## Usage
 
-You can use `someguy`  as a client (e.g. IPNI caching proxy) or server.
+You can use `someguy` as a client, or as a server.
 
-By default, `someguy start` runs a Delegated Routing V1 server that proxies requests to the [IPFS Amino DHT](https://blog.ipfs.tech/2023-09-amino-refactoring/) and the [cid.contact](https://cid.contact) indexer (IPNI) node.
+### Server
+
+You can start the server with `someguy start`. This will, by default, run a Delegated Routing V1 server that proxies requests to the [IPFS Amino DHT](https://blog.ipfs.tech/2023-09-amino-refactoring/) and the [cid.contact](https://cid.contact) indexer (IPNI) node.
+
+For more details run `someguy start --help`.
+
+### Client
 
 If you don't want to run a server yourself, but want to query some other server, you can run `someguy ask` and choose any of the subcommands and ask for a provider, a peer, or even an IPNS record.
 
-For more details run `someguy --help`.
+For more details run `someguy ask --help`.
+
+## Deployment
+
+Suggested method for self-hosting is to run a [prebuilt Docker image](#docker).
 
 ## Release
 
-To make a release, create a new PR that updates the [`version.json`](./version.json) file. This PR should not include any other changes besides the version bump. A new release will be automatically made once the PR is merged.
+To make a release, create a new PR that updates the [`version.json`](./version.json) file. This PR should not include any other changes besides the version bump. A new release will be automatically made once the PR is merged
+
+## License
+
+Dual-licensed under [MIT + Apache 2.0](LICENSE.md)
