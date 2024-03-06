@@ -10,6 +10,4 @@ COPY *.go ./
 
 RUN go build -o /someguy
 
-EXPOSE 8190
-
-CMD [ "/someguy", "start", "--listen-address", "0.0.0.0:8190" ]
+CMD [ "/someguy", "start" ]
