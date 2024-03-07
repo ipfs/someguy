@@ -3,7 +3,7 @@
 `someguy` ships with some implicit defaults that can be adjusted via env variables below.
 
 - [Configuration](#configuration)
-  - [`SOMEGUY_PORT`](#someguy_port)
+  - [`SOMEGUY_LISTEN_ADDRESS`](#someguy_listen_address)
   - [`SOMEGUY_ACCELERATED_DHT`](#someguy_accelerated_dht)
   - [`SOMEGUY_PROVIDER_ENDPOINTS`](#someguy_provider_endpoints)
   - [`SOMEGUY_PEER_ENDPOINTS`](#someguy_peer_endpoints)
@@ -16,11 +16,11 @@
 
 ## Configuration
 
-### `SOMEGUY_PORT`
+### `SOMEGUY_LISTEN_ADDRESS`
 
-The port to listen on to.
+The address to listen on.
 
-Default: `8080`
+Default: `127.0.0.1:8190`
 
 ### `SOMEGUY_ACCELERATED_DHT`
 

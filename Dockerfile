@@ -10,6 +10,4 @@ COPY *.go ./
 
 RUN go build -o /someguy
 
-EXPOSE 8080
-
-CMD [ "/someguy", "start", "--port", "8080" ]
+CMD [ "/someguy", "start" ]

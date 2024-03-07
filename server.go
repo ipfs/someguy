@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"log"
+	"net"
 	"net/http"
-	"strconv"
 
 	"github.com/CAFxX/httpcompression"
 	"github.com/felixge/httpsnoop"
@@ -32,7 +32,7 @@ func withRequestLogger(next http.Handler) http.Handler {
 	})
 }
 
-func start(ctx context.Context, port int, runAcceleratedDHTClient bool, contentEndpoints, peerEndpoints, ipnsEndpoints []string) error {
+func start(ctx context.Context, listenAddress string, runAcceleratedDHTClient bool, contentEndpoints, peerEndpoints, ipnsEndpoints []string) error {
 	h, err := newHost(runAcceleratedDHTClient)
 	if err != nil {
 		return err
@@ -68,8 +68,13 @@ func start(ctx context.Context, port int, runAcceleratedDHTClient bool, contentE
 		return err
 	}
 
-	log.Printf("Listening on http://0.0.0.0:%d", port)
-	log.Printf("Delegated Routing API on http://127.0.0.1:%d/routing/v1", port)
+	_, port, err := net.SplitHostPort(listenAddress)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("Listening on %s", listenAddress)
+	log.Printf("Delegated Routing API on http://127.0.0.1:%s/routing/v1", port)
 
 	mdlw := middleware.New(middleware.Config{
 		Recorder: metrics.NewRecorder(metrics.Config{Prefix: "someguy"}),
@@ -103,7 +108,7 @@ func start(ctx context.Context, port int, runAcceleratedDHTClient bool, contentE
 
 	http.Handle("/debug/metrics/prometheus", promhttp.Handler())
 	http.Handle("/", handler)
-	server := &http.Server{Addr: ":" + strconv.Itoa(port), Handler: nil}
+	server := &http.Server{Addr: listenAddress, Handler: nil}
 	return server.ListenAndServe()
 }
 

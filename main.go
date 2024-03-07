@@ -22,11 +22,11 @@ func main() {
 			{
 				Name: "start",
 				Flags: []cli.Flag{
-					&cli.IntFlag{
-						Name:    "port",
-						Value:   8080,
-						EnvVars: []string{"SOMEGUY_PORT"},
-						Usage:   "port to serve requests on",
+					&cli.StringFlag{
+						Name:    "listen-address",
+						Value:   "127.0.0.1:8190",
+						EnvVars: []string{"SOMEGUY_LISTEN_ADDRESS"},
+						Usage:   "listen address",
 					},
 					&cli.BoolFlag{
 						Name:    "accelerated-dht",
@@ -54,7 +54,7 @@ func main() {
 					},
 				},
 				Action: func(ctx *cli.Context) error {
-					return start(ctx.Context, ctx.Int("port"), ctx.Bool("accelerated-dht"), ctx.StringSlice("provider-endpoints"), ctx.StringSlice("peer-endpoints"), ctx.StringSlice("ipns-endpoints"))
+					return start(ctx.Context, ctx.String("listen-address"), ctx.Bool("accelerated-dht"), ctx.StringSlice("provider-endpoints"), ctx.StringSlice("peer-endpoints"), ctx.StringSlice("ipns-endpoints"))
 				},
 			},
 			{
