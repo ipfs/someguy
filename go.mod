@@ -5,7 +5,7 @@ go 1.21
 require (
 	github.com/CAFxX/httpcompression v0.0.9
 	github.com/felixge/httpsnoop v1.0.4
-	github.com/ipfs/boxo v0.18.0
+	github.com/ipfs/boxo v0.18.1-0.20240307083455-b6b7771fbca0
 	github.com/ipfs/go-cid v0.4.1
 	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/libp2p/go-libp2p v0.33.0
