@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"math"
 	"sync"
 	"time"
 
@@ -24,10 +25,12 @@ type router interface {
 
 type providersRouter interface {
 	FindProviders(ctx context.Context, cid cid.Cid, limit int) (iter.ResultIter[types.Record], error)
+	Provide(ctx context.Context, req *types.AnnouncementRecord) (time.Duration, error)
 }
 
 type peersRouter interface {
 	FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error)
+	ProvidePeer(ctx context.Context, req *types.AnnouncementRecord) (time.Duration, error)
 }
 
 type ipnsRouter interface {
@@ -50,11 +53,25 @@ func (r composableRouter) FindProviders(ctx context.Context, key cid.Cid, limit 
 	return r.providers.FindProviders(ctx, key, limit)
 }
 
+func (r composableRouter) Provide(ctx context.Context, req *types.AnnouncementRecord) (time.Duration, error) {
+	if r.providers == nil {
+		return 0, nil
+	}
+	return r.providers.Provide(ctx, req)
+}
+
 func (r composableRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
 	if r.peers == nil {
 		return iter.ToResultIter(iter.FromSlice([]*types.PeerRecord{})), nil
 	}
 	return r.peers.FindPeers(ctx, pid, limit)
+}
+
+func (r composableRouter) ProvidePeer(ctx context.Context, req *types.AnnouncementRecord) (time.Duration, error) {
+	if r.peers == nil {
+		return 0, nil
+	}
+	return r.peers.ProvidePeer(ctx, req)
 }
 
 func (r composableRouter) GetIPNS(ctx context.Context, name ipns.Name) (*ipns.Record, error) {
@@ -69,11 +86,6 @@ func (r composableRouter) PutIPNS(ctx context.Context, name ipns.Name, record *i
 		return nil
 	}
 	return r.ipns.PutIPNS(ctx, name, record)
-}
-
-//lint:ignore SA1019 // ignore staticcheck
-func (r composableRouter) ProvideBitswap(ctx context.Context, req *server.BitswapWriteProvideRequest) (time.Duration, error) {
-	return 0, routing.ErrNotSupported
 }
 
 var _ server.ContentRouter = parallelRouter{}
@@ -206,6 +218,57 @@ func (mi *manyIter[T]) Close() error {
 	return err
 }
 
+func (r parallelRouter) Provide(ctx context.Context, req *types.AnnouncementRecord) (time.Duration, error) {
+	return provide(ctx, r.routers, func(ctx context.Context, r router) (time.Duration, error) {
+		return r.Provide(ctx, req)
+	})
+}
+
+func (r parallelRouter) ProvidePeer(ctx context.Context, req *types.AnnouncementRecord) (time.Duration, error) {
+	return provide(ctx, r.routers, func(ctx context.Context, r router) (time.Duration, error) {
+		return r.ProvidePeer(ctx, req)
+	})
+}
+
+func provide(ctx context.Context, routers []router, call func(context.Context, router) (time.Duration, error)) (time.Duration, error) {
+	switch len(routers) {
+	case 0:
+		return 0, nil
+	case 1:
+		return call(ctx, routers[0])
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	var wg sync.WaitGroup
+	resultsTTL := make([]time.Duration, len(routers))
+	resultsErr := make([]error, len(routers))
+	wg.Add(len(routers))
+	for i, ri := range routers {
+		go func(ri router, i int) {
+			resultsTTL[i], resultsErr[i] = call(ctx, ri)
+			wg.Done()
+		}(ri, i)
+	}
+	wg.Wait()
+
+	var err error
+	for _, e := range resultsErr {
+		err = errors.Join(err, e)
+	}
+
+	// Choose lowest TTL to return.
+	var ttl time.Duration = math.MaxInt64
+	for _, t := range resultsTTL {
+		if t < ttl {
+			ttl = t
+		}
+	}
+
+	return ttl, err
+}
+
 func (r parallelRouter) GetIPNS(ctx context.Context, name ipns.Name) (*ipns.Record, error) {
 	switch len(r.routers) {
 	case 0:
@@ -296,11 +359,6 @@ func (r parallelRouter) PutIPNS(ctx context.Context, name ipns.Name, record *ipn
 	return errs
 }
 
-//lint:ignore SA1019 // ignore staticcheck
-func (r parallelRouter) ProvideBitswap(ctx context.Context, req *server.BitswapWriteProvideRequest) (time.Duration, error) {
-	return 0, routing.ErrNotSupported
-}
-
 var _ router = libp2pRouter{}
 
 type libp2pRouter struct {
@@ -314,6 +372,12 @@ func (d libp2pRouter) FindProviders(ctx context.Context, key cid.Cid, limit int)
 		ch:     ch,
 		cancel: cancel,
 	}), nil
+}
+
+func (d libp2pRouter) Provide(ctx context.Context, req *types.AnnouncementRecord) (time.Duration, error) {
+	// NOTE: this router cannot provide further to the DHT, since we can only
+	// announce CIDs that our own node has, which is not the case.
+	return 0, routing.ErrNotSupported
 }
 
 func (d libp2pRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
@@ -335,6 +399,10 @@ func (d libp2pRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (it
 	}
 
 	return iter.ToResultIter[*types.PeerRecord](iter.FromSlice[*types.PeerRecord]([]*types.PeerRecord{rec})), nil
+}
+
+func (r libp2pRouter) ProvidePeer(ctx context.Context, req *types.AnnouncementRecord) (time.Duration, error) {
+	return 0, routing.ErrNotSupported
 }
 
 func (d libp2pRouter) GetIPNS(ctx context.Context, name ipns.Name) (*ipns.Record, error) {
@@ -409,6 +477,37 @@ func (d clientRouter) FindProviders(ctx context.Context, cid cid.Cid, limit int)
 	return d.Client.FindProviders(ctx, cid)
 }
 
+func (d clientRouter) Provide(ctx context.Context, req *types.AnnouncementRecord) (time.Duration, error) {
+	return d.provide(func() (iter.ResultIter[*types.AnnouncementResponseRecord], error) {
+		return d.Client.ProvideRecords(ctx, req)
+	})
+}
+
 func (d clientRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
 	return d.Client.FindPeers(ctx, pid)
+}
+
+func (d clientRouter) ProvidePeer(ctx context.Context, req *types.AnnouncementRecord) (time.Duration, error) {
+	return d.provide(func() (iter.ResultIter[*types.AnnouncementResponseRecord], error) {
+		return d.Client.ProvidePeerRecords(ctx, req)
+	})
+}
+
+func (d clientRouter) provide(do func() (iter.ResultIter[*types.AnnouncementResponseRecord], error)) (time.Duration, error) {
+	resultsIter, err := do()
+	if err != nil {
+		return 0, err
+	}
+	defer resultsIter.Close()
+
+	records, err := iter.ReadAllResults(resultsIter)
+	if err != nil {
+		return 0, err
+	}
+
+	if len(records) != 1 {
+		return 0, errors.New("invalid number of records returned")
+	}
+
+	return records[0].TTL, nil
 }

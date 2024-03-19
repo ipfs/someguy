@@ -32,12 +32,22 @@ func (m *mockRouter) FindProviders(ctx context.Context, key cid.Cid, limit int) 
 	return args.Get(0).(iter.ResultIter[types.Record]), args.Error(1)
 }
 
+func (m *mockRouter) Provide(ctx context.Context, req *types.AnnouncementRecord) (time.Duration, error) {
+	args := m.Called(ctx, req)
+	return args.Get(0).(time.Duration), args.Error(1)
+}
+
 func (m *mockRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
 	args := m.Called(ctx, pid, limit)
 	if arg0 := args.Get(0); arg0 == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(iter.ResultIter[*types.PeerRecord]), args.Error(1)
+}
+
+func (m *mockRouter) ProvidePeer(ctx context.Context, req *types.AnnouncementRecord) (time.Duration, error) {
+	args := m.Called(ctx, req)
+	return args.Get(0).(time.Duration), args.Error(1)
 }
 
 func (m *mockRouter) GetIPNS(ctx context.Context, name ipns.Name) (*ipns.Record, error) {
