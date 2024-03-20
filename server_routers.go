@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"math"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -13,29 +16,36 @@ import (
 	"github.com/ipfs/boxo/routing/http/types"
 	"github.com/ipfs/boxo/routing/http/types/iter"
 	"github.com/ipfs/go-cid"
+	"github.com/ipfs/go-datastore"
+	leveldb "github.com/ipfs/go-ds-leveldb"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/routing"
+	"github.com/samber/lo"
 )
 
 type router interface {
 	providersRouter
 	peersRouter
 	ipnsRouter
+	io.Closer
 }
 
 type providersRouter interface {
 	FindProviders(ctx context.Context, cid cid.Cid, limit int) (iter.ResultIter[types.Record], error)
 	Provide(ctx context.Context, req *types.AnnouncementRecord) (time.Duration, error)
+	io.Closer
 }
 
 type peersRouter interface {
 	FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error)
 	ProvidePeer(ctx context.Context, req *types.AnnouncementRecord) (time.Duration, error)
+	io.Closer
 }
 
 type ipnsRouter interface {
 	GetIPNS(ctx context.Context, name ipns.Name) (*ipns.Record, error)
 	PutIPNS(ctx context.Context, name ipns.Name, record *ipns.Record) error
+	io.Closer
 }
 
 var _ server.ContentRouter = composableRouter{}
@@ -86,6 +96,24 @@ func (r composableRouter) PutIPNS(ctx context.Context, name ipns.Name, record *i
 		return nil
 	}
 	return r.ipns.PutIPNS(ctx, name, record)
+}
+
+func (r composableRouter) Close() error {
+	var err error
+
+	if r.providers != nil {
+		err = errors.Join(err, r.providers.Close())
+	}
+
+	if r.peers != nil {
+		err = errors.Join(err, r.peers.Close())
+	}
+
+	if r.ipns != nil {
+		err = errors.Join(err, r.ipns.Close())
+	}
+
+	return err
 }
 
 var _ server.ContentRouter = parallelRouter{}
@@ -359,32 +387,42 @@ func (r parallelRouter) PutIPNS(ctx context.Context, name ipns.Name, record *ipn
 	return errs
 }
 
+func (r parallelRouter) Close() error {
+	var err error
+
+	for _, r := range r.routers {
+		err = errors.Join(err, r.Close())
+	}
+
+	return err
+}
+
 var _ router = libp2pRouter{}
 
 type libp2pRouter struct {
-	routing routing.Routing
+	putEnabled bool
+	routing    routing.Routing
 }
 
-func (d libp2pRouter) FindProviders(ctx context.Context, key cid.Cid, limit int) (iter.ResultIter[types.Record], error) {
+func (r libp2pRouter) FindProviders(ctx context.Context, key cid.Cid, limit int) (iter.ResultIter[types.Record], error) {
 	ctx, cancel := context.WithCancel(ctx)
-	ch := d.routing.FindProvidersAsync(ctx, key, limit)
-	return iter.ToResultIter[types.Record](&peerChanIter{
+	ch := r.routing.FindProvidersAsync(ctx, key, limit)
+	return iter.ToResultIter(&peerChanIter{
 		ch:     ch,
 		cancel: cancel,
 	}), nil
 }
 
-func (d libp2pRouter) Provide(ctx context.Context, req *types.AnnouncementRecord) (time.Duration, error) {
-	// NOTE: this router cannot provide further to the DHT, since we can only
-	// announce CIDs that our own node has, which is not the case.
+func (r libp2pRouter) Provide(ctx context.Context, req *types.AnnouncementRecord) (time.Duration, error) {
+	// NOTE: the libp2p router cannot provide records further into the DHT.
 	return 0, routing.ErrNotSupported
 }
 
-func (d libp2pRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
+func (r libp2pRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	addr, err := d.routing.FindPeer(ctx, pid)
+	addr, err := r.routing.FindPeer(ctx, pid)
 	if err != nil {
 		return nil, err
 	}
@@ -398,18 +436,19 @@ func (d libp2pRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (it
 		rec.Addrs = append(rec.Addrs, types.Multiaddr{Multiaddr: addr})
 	}
 
-	return iter.ToResultIter[*types.PeerRecord](iter.FromSlice[*types.PeerRecord]([]*types.PeerRecord{rec})), nil
+	return iter.ToResultIter(iter.FromSlice([]*types.PeerRecord{rec})), nil
 }
 
 func (r libp2pRouter) ProvidePeer(ctx context.Context, req *types.AnnouncementRecord) (time.Duration, error) {
+	// NOTE: the libp2p router cannot provide peers further into the DHT.
 	return 0, routing.ErrNotSupported
 }
 
-func (d libp2pRouter) GetIPNS(ctx context.Context, name ipns.Name) (*ipns.Record, error) {
+func (r libp2pRouter) GetIPNS(ctx context.Context, name ipns.Name) (*ipns.Record, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	raw, err := d.routing.GetValue(ctx, string(name.RoutingKey()))
+	raw, err := r.routing.GetValue(ctx, string(name.RoutingKey()))
 	if err != nil {
 		return nil, err
 	}
@@ -417,7 +456,11 @@ func (d libp2pRouter) GetIPNS(ctx context.Context, name ipns.Name) (*ipns.Record
 	return ipns.UnmarshalRecord(raw)
 }
 
-func (d libp2pRouter) PutIPNS(ctx context.Context, name ipns.Name, record *ipns.Record) error {
+func (r libp2pRouter) PutIPNS(ctx context.Context, name ipns.Name, record *ipns.Record) error {
+	if !r.putEnabled {
+		return routing.ErrNotSupported
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -426,7 +469,11 @@ func (d libp2pRouter) PutIPNS(ctx context.Context, name ipns.Name, record *ipns.
 		return err
 	}
 
-	return d.routing.PutValue(ctx, string(name.RoutingKey()), raw)
+	return r.routing.PutValue(ctx, string(name.RoutingKey()), raw)
+}
+
+func (r libp2pRouter) Close() error {
+	return nil
 }
 
 type peerChanIter struct {
@@ -470,30 +517,51 @@ func (it *peerChanIter) Close() error {
 var _ router = clientRouter{}
 
 type clientRouter struct {
-	*client.Client
+	putEnabled bool
+	client     *client.Client
 }
 
-func (d clientRouter) FindProviders(ctx context.Context, cid cid.Cid, limit int) (iter.ResultIter[types.Record], error) {
-	return d.Client.FindProviders(ctx, cid)
+func (r clientRouter) FindProviders(ctx context.Context, cid cid.Cid, limit int) (iter.ResultIter[types.Record], error) {
+	return r.client.FindProviders(ctx, cid)
 }
 
-func (d clientRouter) Provide(ctx context.Context, req *types.AnnouncementRecord) (time.Duration, error) {
-	return d.provide(func() (iter.ResultIter[*types.AnnouncementResponseRecord], error) {
-		return d.Client.ProvideRecords(ctx, req)
+func (r clientRouter) Provide(ctx context.Context, req *types.AnnouncementRecord) (time.Duration, error) {
+	if !r.putEnabled {
+		return 0, routing.ErrNotSupported
+	}
+
+	return r.provide(func() (iter.ResultIter[*types.AnnouncementResponseRecord], error) {
+		return r.client.ProvideRecords(ctx, req)
 	})
 }
 
-func (d clientRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
-	return d.Client.FindPeers(ctx, pid)
+func (r clientRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
+	return r.client.FindPeers(ctx, pid)
 }
 
-func (d clientRouter) ProvidePeer(ctx context.Context, req *types.AnnouncementRecord) (time.Duration, error) {
-	return d.provide(func() (iter.ResultIter[*types.AnnouncementResponseRecord], error) {
-		return d.Client.ProvidePeerRecords(ctx, req)
+func (r clientRouter) ProvidePeer(ctx context.Context, req *types.AnnouncementRecord) (time.Duration, error) {
+	if !r.putEnabled {
+		return 0, routing.ErrNotSupported
+	}
+
+	return r.provide(func() (iter.ResultIter[*types.AnnouncementResponseRecord], error) {
+		return r.client.ProvidePeerRecords(ctx, req)
 	})
 }
 
-func (d clientRouter) provide(do func() (iter.ResultIter[*types.AnnouncementResponseRecord], error)) (time.Duration, error) {
+func (r clientRouter) GetIPNS(ctx context.Context, name ipns.Name) (*ipns.Record, error) {
+	return r.client.GetIPNS(ctx, name)
+}
+
+func (r clientRouter) PutIPNS(ctx context.Context, name ipns.Name, record *ipns.Record) error {
+	if !r.putEnabled {
+		return routing.ErrNotSupported
+	}
+
+	return r.client.PutIPNS(ctx, name, record)
+}
+
+func (r clientRouter) provide(do func() (iter.ResultIter[*types.AnnouncementResponseRecord], error)) (time.Duration, error) {
 	resultsIter, err := do()
 	if err != nil {
 		return 0, err
@@ -510,4 +578,224 @@ func (d clientRouter) provide(do func() (iter.ResultIter[*types.AnnouncementResp
 	}
 
 	return records[0].TTL, nil
+}
+
+func (r clientRouter) Close() error {
+	return nil
+}
+
+var _ router = localRouter{}
+
+type localRouter struct {
+	datastore datastore.Batching
+}
+
+func providersKey(cid cid.Cid) datastore.Key {
+	return datastore.KeyWithNamespaces([]string{"providers", cid.String()})
+}
+
+func peersKey(pid peer.ID) datastore.Key {
+	return datastore.KeyWithNamespaces([]string{"peers", pid.String()})
+}
+
+func ipnsKey(name ipns.Name) datastore.Key {
+	return datastore.NewKey("ipns-" + name.String())
+}
+
+func newLocalRouter(datadir string) (*localRouter, error) {
+	ds, err := leveldb.NewDatastore(filepath.Join(datadir, "leveldb"), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return &localRouter{
+		datastore: ds,
+	}, nil
+}
+
+func (r localRouter) FindProviders(ctx context.Context, cid cid.Cid, limit int) (iter.ResultIter[types.Record], error) {
+	raw, err := r.datastore.Get(ctx, providersKey(cid))
+	if errors.Is(err, datastore.ErrNotFound) {
+		return iter.ToResultIter(iter.FromSlice([]types.Record{})), nil
+	} else if err != nil {
+		return nil, err
+	}
+
+	var peerRecords []*types.PeerRecord
+	err = json.Unmarshal(raw, &peerRecords)
+	if err != nil {
+		return nil, err
+	}
+
+	var records []types.Record
+	for _, r := range peerRecords {
+		records = append(records, r)
+	}
+
+	return iter.ToResultIter(iter.FromSlice(records)), nil
+}
+
+// Note: we don't verify the record since that is already done by the caller,
+// i.e., Boxo's implementation of the server. This also facilitates our tests.
+func (r localRouter) Provide(ctx context.Context, req *types.AnnouncementRecord) (time.Duration, error) {
+	key := providersKey(req.Payload.CID)
+
+	var records []types.PeerRecord
+
+	raw, err := r.datastore.Get(ctx, key)
+	if errors.Is(err, datastore.ErrNotFound) {
+		// Nothing
+	} else if err != nil {
+		return 0, err
+	} else {
+		err = json.Unmarshal(raw, &records)
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	// NOTE: this is a very naive storage. We just transform the announcement
+	// record into a peer record and append it to the list. This will be returned
+	// when FindPeers is called.
+	records = append(records, types.PeerRecord{
+		Schema:    types.SchemaPeer,
+		ID:        req.Payload.ID,
+		Addrs:     req.Payload.Addrs,
+		Protocols: req.Payload.Protocols,
+	})
+
+	raw, err = json.Marshal(records)
+	if err != nil {
+		return 0, err
+	}
+
+	return req.Payload.TTL, r.datastore.Put(ctx, key, raw)
+}
+
+func (r localRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
+	raw, err := r.datastore.Get(ctx, peersKey(pid))
+	if errors.Is(err, datastore.ErrNotFound) {
+		return iter.ToResultIter(iter.FromSlice([]*types.PeerRecord{})), nil
+	} else if err != nil {
+		return nil, err
+	}
+
+	var record *types.PeerRecord
+	err = json.Unmarshal(raw, &record)
+	if err != nil {
+		return nil, err
+	}
+
+	return iter.ToResultIter(iter.FromSlice([]*types.PeerRecord{record})), nil
+}
+
+// Note: we don't verify the record since that is already done by the caller,
+// i.e., Boxo's implementation of the server. This also facilitates our tests.
+func (r localRouter) ProvidePeer(ctx context.Context, req *types.AnnouncementRecord) (time.Duration, error) {
+	key := peersKey(*req.Payload.ID)
+
+	// Make a [types.PeerRecord] based on the given [types.AnnouncementRecord].
+	record := &types.PeerRecord{
+		Schema:    types.SchemaPeer,
+		ID:        req.Payload.ID,
+		Addrs:     req.Payload.Addrs,
+		Protocols: req.Payload.Protocols,
+	}
+
+	raw, err := r.datastore.Get(ctx, key)
+	if errors.Is(err, datastore.ErrNotFound) {
+		// Nothing
+	} else if err != nil {
+		return 0, err
+	} else {
+		// If we already had a record for the same peer, merge them together.
+		var oldRecord *types.PeerRecord
+		err = json.Unmarshal(raw, &oldRecord)
+		if err != nil {
+			return 0, err
+		}
+
+		record.Addrs = lo.Uniq(append(record.Addrs, oldRecord.Addrs...))
+		record.Protocols = lo.Uniq(append(record.Protocols, oldRecord.Protocols...))
+	}
+
+	raw, err = json.Marshal(record)
+	if err != nil {
+		return 0, err
+	}
+
+	return req.Payload.TTL, r.datastore.Put(ctx, key, raw)
+}
+
+func (r localRouter) GetIPNS(ctx context.Context, name ipns.Name) (*ipns.Record, error) {
+	raw, err := r.datastore.Get(ctx, ipnsKey(name))
+	if errors.Is(err, datastore.ErrNotFound) {
+		return nil, routing.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return ipns.UnmarshalRecord(raw)
+}
+
+func (r localRouter) PutIPNS(ctx context.Context, name ipns.Name, record *ipns.Record) error {
+	shouldStore, err := r.shouldStoreNewIPNS(ctx, name, record)
+	if err != nil {
+		return err
+	}
+
+	if !shouldStore {
+		return nil
+	}
+
+	data, err := ipns.MarshalRecord(record)
+	if err != nil {
+		return err
+	}
+
+	return r.datastore.Put(ctx, ipnsKey(name), data)
+}
+
+func (r localRouter) shouldStoreNewIPNS(ctx context.Context, name ipns.Name, record *ipns.Record) (bool, error) {
+	raw, err := r.datastore.Get(ctx, ipnsKey(name))
+	if errors.Is(err, datastore.ErrNotFound) {
+		return true, nil
+	}
+
+	if err != nil {
+		return false, err
+	}
+
+	oldRecord, err := ipns.UnmarshalRecord(raw)
+	if err != nil {
+		return false, err
+	}
+
+	oldSequence, err := oldRecord.Sequence()
+	if err != nil {
+		return false, err
+	}
+
+	oldValidity, err := oldRecord.Validity()
+	if err != nil {
+		return false, err
+	}
+
+	sequence, err := record.Sequence()
+	if err != nil {
+		return false, err
+	}
+
+	validity, err := record.Validity()
+	if err != nil {
+		return false, err
+	}
+
+	// Only store new record if sequence is higher or the validity is higher.
+	return sequence > oldSequence || validity.After(oldValidity), nil
+}
+
+func (r localRouter) Close() error {
+	return r.datastore.Close()
 }

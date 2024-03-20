@@ -63,6 +63,10 @@ func (m *mockRouter) PutIPNS(ctx context.Context, name ipns.Name, record *ipns.R
 	return args.Error(0)
 }
 
+func (m *mockRouter) Close() error {
+	return nil
+}
+
 func makeName(t *testing.T) (crypto.PrivKey, ipns.Name) {
 	sk, _, err := crypto.GenerateEd25519Key(rand.Reader)
 	require.NoError(t, err)
@@ -680,4 +684,196 @@ func TestManyIter(t *testing.T) {
 		require.False(t, manyIter.Next())
 		require.NoError(t, manyIter.Close())
 	})
+}
+
+func equalRecords(t *testing.T, a, b *ipns.Record) {
+	aValue, err := a.Value()
+	require.NoError(t, err)
+
+	aSequence, err := a.Sequence()
+	require.NoError(t, err)
+
+	aTTL, err := a.TTL()
+	require.NoError(t, err)
+
+	aValidity, err := a.Validity()
+	require.NoError(t, err)
+
+	bValue, err := b.Value()
+	require.NoError(t, err)
+
+	bSequence, err := b.Sequence()
+	require.NoError(t, err)
+
+	bTTL, err := b.TTL()
+	require.NoError(t, err)
+
+	bValidity, err := b.Validity()
+	require.NoError(t, err)
+
+	require.Equal(t, aValue, bValue)
+	require.Equal(t, aSequence, bSequence)
+	require.Equal(t, aTTL, bTTL)
+	require.Equal(t, aValidity, bValidity)
+}
+
+func TestLocalRouter(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Providers", func(t *testing.T) {
+		t.Parallel()
+
+		tempDir := t.TempDir()
+		r, err := newLocalRouter(tempDir)
+		require.NoError(t, err)
+		defer r.Close()
+
+		_, name := makeName(t)
+		pid := name.Peer()
+		cid := makeCID()
+
+		t.Run("Store and Retrieve Record for CID", func(t *testing.T) {
+			resultsIter, err := r.FindProviders(context.Background(), cid, 10)
+			require.NoError(t, err)
+
+			results, err := iter.ReadAllResults(resultsIter)
+			require.NoError(t, err)
+			require.Len(t, results, 0)
+
+			_, err = r.Provide(context.Background(), &types.AnnouncementRecord{
+				Payload: types.AnnouncementPayload{
+					CID:       cid,
+					ID:        &pid,
+					Protocols: []string{"a"},
+				},
+			})
+			require.NoError(t, err)
+
+			resultsIter, err = r.FindProviders(context.Background(), cid, 10)
+			require.NoError(t, err)
+
+			results, err = iter.ReadAllResults(resultsIter)
+			require.NoError(t, err)
+			require.Len(t, results, 1)
+		})
+
+		t.Run("Provide New Record", func(t *testing.T) {
+			_, err = r.Provide(context.Background(), &types.AnnouncementRecord{
+				Payload: types.AnnouncementPayload{
+					ID:        &pid,
+					CID:       cid,
+					Protocols: []string{"b", "a", "a"},
+				},
+			})
+			require.NoError(t, err)
+
+			resultsIter, err := r.FindProviders(context.Background(), cid, 10)
+			require.NoError(t, err)
+
+			results, err := iter.ReadAllResults(resultsIter)
+			require.NoError(t, err)
+			require.Len(t, results, 2)
+		})
+	})
+
+	t.Run("Peers", func(t *testing.T) {
+		t.Parallel()
+
+		tempDir := t.TempDir()
+		r, err := newLocalRouter(tempDir)
+		require.NoError(t, err)
+		defer r.Close()
+
+		_, name := makeName(t)
+		pid := name.Peer()
+
+		t.Run("Store and Retrieve Peer", func(t *testing.T) {
+			resultsIter, err := r.FindPeers(context.Background(), pid, 1)
+			require.NoError(t, err)
+
+			results, err := iter.ReadAllResults(resultsIter)
+			require.NoError(t, err)
+			require.Len(t, results, 0)
+
+			_, err = r.ProvidePeer(context.Background(), &types.AnnouncementRecord{
+				Payload: types.AnnouncementPayload{
+					ID:        &pid,
+					Protocols: []string{"a"},
+				},
+			})
+			require.NoError(t, err)
+
+			resultsIter, err = r.FindPeers(context.Background(), pid, 1)
+			require.NoError(t, err)
+
+			results, err = iter.ReadAllResults(resultsIter)
+			require.NoError(t, err)
+			require.Len(t, results, 1)
+			require.Equal(t, []string{"a"}, results[0].Protocols)
+		})
+
+		t.Run("Provide Updated Information", func(t *testing.T) {
+			_, err = r.ProvidePeer(context.Background(), &types.AnnouncementRecord{
+				Payload: types.AnnouncementPayload{
+					ID:        &pid,
+					Protocols: []string{"b", "a", "a"},
+				},
+			})
+			require.NoError(t, err)
+
+			resultsIter, err := r.FindPeers(context.Background(), pid, 1)
+			require.NoError(t, err)
+
+			results, err := iter.ReadAllResults(resultsIter)
+			require.NoError(t, err)
+			require.Len(t, results, 1)
+			require.Equal(t, []string{"b", "a"}, results[0].Protocols)
+		})
+	})
+
+	t.Run("IPNS", func(t *testing.T) {
+		t.Parallel()
+
+		tempDir := t.TempDir()
+		r, err := newLocalRouter(tempDir)
+		require.NoError(t, err)
+		defer r.Close()
+
+		sk, name := makeName(t)
+		rec, _ := makeIPNSRecord(t, sk)
+
+		time.Sleep(time.Millisecond * 100)
+		newerRecord, _ := makeIPNSRecord(t, sk)
+
+		t.Run("Store and Retrieve IPNS Record", func(t *testing.T) {
+			_, err = r.GetIPNS(context.Background(), name)
+			require.ErrorIs(t, err, routing.ErrNotFound)
+
+			err = r.PutIPNS(context.Background(), name, rec)
+			require.NoError(t, err)
+
+			storedRecord, err := r.GetIPNS(context.Background(), name)
+			require.NoError(t, err)
+			equalRecords(t, rec, storedRecord)
+		})
+
+		t.Run("Should Replace With Newer Record", func(t *testing.T) {
+			err = r.PutIPNS(context.Background(), name, newerRecord)
+			require.NoError(t, err)
+
+			storedRecord, err := r.GetIPNS(context.Background(), name)
+			require.NoError(t, err)
+			equalRecords(t, newerRecord, storedRecord)
+		})
+
+		t.Run("Should Not Replace With Older Record", func(t *testing.T) {
+			err = r.PutIPNS(context.Background(), name, rec)
+			require.NoError(t, err)
+
+			storedRecord, err := r.GetIPNS(context.Background(), name)
+			require.NoError(t, err)
+			equalRecords(t, newerRecord, storedRecord)
+		})
+	})
+
 }

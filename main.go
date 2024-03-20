@@ -36,6 +36,18 @@ func main() {
 						EnvVars: []string{"SOMEGUY_ACCELERATED_DHT"},
 						Usage:   "run the accelerated DHT client",
 					},
+					&cli.BoolFlag{
+						Name:    "put-enabled",
+						Value:   false,
+						EnvVars: []string{"SOMEGUY_PUT_ENABLED"},
+						Usage:   "enables HTTP PUT endpoints",
+					},
+					&cli.StringFlag{
+						Name:    "datadir",
+						Value:   "",
+						EnvVars: []string{"SOMEGUY_DATADIR"},
+						Usage:   "directory for persistent data",
+					},
 					&cli.StringSliceFlag{
 						Name:    "provider-endpoints",
 						Value:   cli.NewStringSlice(cidContactEndpoint),
@@ -56,7 +68,17 @@ func main() {
 					},
 				},
 				Action: func(ctx *cli.Context) error {
-					return start(ctx.Context, ctx.String("listen-address"), ctx.Bool("accelerated-dht"), ctx.StringSlice("provider-endpoints"), ctx.StringSlice("peer-endpoints"), ctx.StringSlice("ipns-endpoints"))
+					options := &serverOptions{
+						listenAddress:    ctx.String("listen-address"),
+						acceleratedDHT:   ctx.Bool("accelerated-dht"),
+						putEnabled:       ctx.Bool("put-enabled"),
+						contentEndpoints: ctx.StringSlice("provider-endpoints"),
+						peerEndpoints:    ctx.StringSlice("peer-endpoints"),
+						ipnsEndpoints:    ctx.StringSlice("ipns-endpoints"),
+						dataDirectory:    ctx.String("datadir"),
+					}
+
+					return startServer(ctx.Context, options)
 				},
 			},
 			{
