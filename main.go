@@ -16,8 +16,9 @@ const cidContactEndpoint = "https://cid.contact"
 
 func main() {
 	app := &cli.App{
-		Name:  "someguy",
-		Usage: "ask someguy for your Delegated Routing requests",
+		Name:    name,
+		Usage:   "A Delegated Routing V1 server and proxy for all your routing needs.",
+		Version: version,
 		Commands: []*cli.Command{
 			{
 				Name: "start",

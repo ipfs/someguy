@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -23,7 +24,7 @@ import (
 	middlewarestd "github.com/slok/go-http-metrics/middleware/std"
 )
 
-var logger = logging.Logger("someguy")
+var logger = logging.Logger(name)
 
 func withRequestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -73,6 +74,7 @@ func start(ctx context.Context, listenAddress string, runAcceleratedDHTClient bo
 		return err
 	}
 
+	log.Printf("Starting %s %s\n", name, version)
 	log.Printf("Listening on %s", listenAddress)
 	log.Printf("Delegated Routing API on http://127.0.0.1:%s/routing/v1", port)
 
@@ -107,7 +109,12 @@ func start(ctx context.Context, listenAddress string, runAcceleratedDHTClient bo
 	handler = withRequestLogger(handler)
 
 	http.Handle("/debug/metrics/prometheus", promhttp.Handler())
+	http.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "Client: %s\n", name)
+		fmt.Fprintf(w, "Version: %s\n", version)
+	})
 	http.Handle("/", handler)
+
 	server := &http.Server{Addr: listenAddress, Handler: nil}
 	return server.ListenAndServe()
 }
@@ -154,7 +161,7 @@ func getCombinedRouting(endpoints []string, dht routing.Routing) (router, error)
 	var routers []router
 
 	for _, endpoint := range endpoints {
-		drclient, err := client.New(endpoint)
+		drclient, err := client.New(endpoint, client.WithUserAgent(userAgent))
 		if err != nil {
 			return nil, err
 		}
