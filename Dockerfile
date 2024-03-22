@@ -1,13 +1,42 @@
-FROM golang:1.21-bullseye
+# Builder
+FROM --platform=${BUILDPLATFORM:-linux/amd64} golang:1.21-bookworm AS builder
 
-WORKDIR /app
+LABEL org.opencontainers.image.source=https://github.com/ipfs/someguy
+LABEL org.opencontainers.image.description="A standalone Delegated Routing V1 server"
+LABEL org.opencontainers.image.licenses=MIT+APACHE_2.0
 
-COPY go.mod ./
-COPY go.sum ./
+ARG TARGETPLATFORM TARGETOS TARGETARCH
+
+ENV GOPATH      /go
+ENV SRC_PATH    $GOPATH/src/github.com/ipfs/someguy
+ENV GO111MODULE on
+ENV GOPROXY     https://proxy.golang.org
+
+COPY go.* $SRC_PATH/
+WORKDIR $SRC_PATH
 RUN go mod download
 
-COPY *.go ./
+COPY . $SRC_PATH
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o $GOPATH/bin/someguy
 
-RUN go build -o /someguy
+# Runner
+FROM debian:bookworm-slim
 
-CMD [ "/someguy", "start" ]
+RUN apt-get update && \
+  apt-get install --no-install-recommends -y tini ca-certificates curl && \
+  rm -rf /var/lib/apt/lists/*
+
+ENV GOPATH      /go
+ENV SRC_PATH    $GOPATH/src/github.com/ipfs/someguy
+ENV DATA_PATH   /data/someguy
+
+COPY --from=builder $GOPATH/bin/someguy /usr/local/bin/someguy
+
+RUN mkdir -p $DATA_PATH && \
+    useradd -d $DATA_PATH -u 1000 -G users ipfs && \
+    chown ipfs:users $DATA_PATH
+VOLUME $DATA_PATH
+WORKDIR $DATA_PATH
+
+USER ipfs
+ENTRYPOINT ["tini", "--", "/usr/local/bin/someguy", "start"]
