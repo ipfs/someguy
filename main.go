@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"log"
 	"os"
 
 	"github.com/ipfs/boxo/ipns"
+	"github.com/ipfs/boxo/routing/http/types"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multibase"
@@ -34,6 +36,18 @@ func main() {
 						EnvVars: []string{"SOMEGUY_ACCELERATED_DHT"},
 						Usage:   "run the accelerated DHT client",
 					},
+					&cli.BoolFlag{
+						Name:    "put-enabled",
+						Value:   false,
+						EnvVars: []string{"SOMEGUY_PUT_ENABLED"},
+						Usage:   "enables HTTP PUT endpoints",
+					},
+					&cli.StringFlag{
+						Name:    "datadir",
+						Value:   "",
+						EnvVars: []string{"SOMEGUY_DATADIR"},
+						Usage:   "directory for persistent data",
+					},
 					&cli.StringSliceFlag{
 						Name:    "provider-endpoints",
 						Value:   cli.NewStringSlice(cidContactEndpoint),
@@ -54,7 +68,17 @@ func main() {
 					},
 				},
 				Action: func(ctx *cli.Context) error {
-					return start(ctx.Context, ctx.String("listen-address"), ctx.Bool("accelerated-dht"), ctx.StringSlice("provider-endpoints"), ctx.StringSlice("peer-endpoints"), ctx.StringSlice("ipns-endpoints"))
+					options := &serverOptions{
+						listenAddress:    ctx.String("listen-address"),
+						acceleratedDHT:   ctx.Bool("accelerated-dht"),
+						putEnabled:       ctx.Bool("put-enabled"),
+						contentEndpoints: ctx.StringSlice("provider-endpoints"),
+						peerEndpoints:    ctx.StringSlice("peer-endpoints"),
+						ipnsEndpoints:    ctx.StringSlice("ipns-endpoints"),
+						dataDirectory:    ctx.String("datadir"),
+					}
+
+					return startServer(ctx.Context, options)
 				},
 			},
 			{
@@ -85,7 +109,39 @@ func main() {
 							if err != nil {
 								return err
 							}
-							return findProviders(ctx.Context, c, ctx.String("endpoint"), ctx.Bool("pretty"))
+							cl, err := newAskClient(ctx.String("endpoint"), ctx.Bool("pretty"), os.Stdout)
+							if err != nil {
+								return err
+							}
+							return cl.findProviders(ctx.Context, c)
+						},
+					},
+					{
+						Name:      "provide",
+						Usage:     "provide <record-path...>",
+						UsageText: "Provide a one or multiple announcement records to the network",
+						Action: func(ctx *cli.Context) error {
+							if ctx.NArg() < 1 {
+								return errors.New("invalid command, see help")
+							}
+							records := []*types.AnnouncementRecord{}
+							for _, recordPath := range ctx.Args().Slice() {
+								recordData, err := os.ReadFile(recordPath)
+								if err != nil {
+									return err
+								}
+								var record *types.AnnouncementRecord
+								err = json.Unmarshal(recordData, &record)
+								if err != nil {
+									return err
+								}
+								records = append(records, record)
+							}
+							cl, err := newAskClient(ctx.String("endpoint"), ctx.Bool("pretty"), os.Stdout)
+							if err != nil {
+								return err
+							}
+							return cl.provide(ctx.Context, records...)
 						},
 					},
 					{
@@ -101,7 +157,39 @@ func main() {
 							if err != nil {
 								return err
 							}
-							return findPeers(ctx.Context, pid, ctx.String("endpoint"), ctx.Bool("pretty"))
+							cl, err := newAskClient(ctx.String("endpoint"), ctx.Bool("pretty"), os.Stdout)
+							if err != nil {
+								return err
+							}
+							return cl.findPeers(ctx.Context, pid)
+						},
+					},
+					{
+						Name:      "providepeers",
+						Usage:     "providepeers <record-path...>",
+						UsageText: "Provide a one or multiple peer announcement records to the network",
+						Action: func(ctx *cli.Context) error {
+							if ctx.NArg() < 1 {
+								return errors.New("invalid command, see help")
+							}
+							records := []*types.AnnouncementRecord{}
+							for _, recordPath := range ctx.Args().Slice() {
+								recordData, err := os.ReadFile(recordPath)
+								if err != nil {
+									return err
+								}
+								var record *types.AnnouncementRecord
+								err = json.Unmarshal(recordData, &record)
+								if err != nil {
+									return err
+								}
+								records = append(records, record)
+							}
+							cl, err := newAskClient(ctx.String("endpoint"), ctx.Bool("pretty"), os.Stdout)
+							if err != nil {
+								return err
+							}
+							return cl.providePeer(ctx.Context, records...)
 						},
 					},
 					{
@@ -117,7 +205,11 @@ func main() {
 							if err != nil {
 								return err
 							}
-							return getIPNS(ctx.Context, name, ctx.String("endpoint"), ctx.Bool("pretty"))
+							cl, err := newAskClient(ctx.String("endpoint"), ctx.Bool("pretty"), os.Stdout)
+							if err != nil {
+								return err
+							}
+							return cl.getIPNS(ctx.Context, name)
 						},
 					},
 					{
@@ -139,7 +231,11 @@ func main() {
 							if err != nil {
 								return err
 							}
-							return putIPNS(ctx.Context, name, recBytes, ctx.String("endpoint"))
+							cl, err := newAskClient(ctx.String("endpoint"), ctx.Bool("pretty"), os.Stdout)
+							if err != nil {
+								return err
+							}
+							return cl.putIPNS(ctx.Context, name, recBytes)
 						},
 					},
 				},
