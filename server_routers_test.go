@@ -15,6 +15,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/routing"
+	"github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multihash"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -278,6 +279,12 @@ func makeCID() cid.Cid {
 	return c
 }
 
+func mustMultiaddr(t *testing.T, s string) types.Multiaddr {
+	ma, err := multiaddr.NewMultiaddr(s)
+	require.NoError(t, err)
+	return types.Multiaddr{Multiaddr: ma}
+}
+
 func TestFindProviders(t *testing.T) {
 	t.Parallel()
 
@@ -286,7 +293,8 @@ func TestFindProviders(t *testing.T) {
 		c := makeCID()
 		peers := []peer.ID{"peer1", "peer2", "peer3"}
 
-		d := parallelRouter{}
+		var d router
+		d = parallelRouter{}
 		it, err := d.FindProviders(ctx, c, 10)
 
 		require.NoError(t, err)
@@ -300,17 +308,25 @@ func TestFindProviders(t *testing.T) {
 		mr2Iter := newMockIter[types.Record](ctx)
 		mr2.On("FindProviders", mock.Anything, c, 10).Return(mr2Iter, nil)
 
-		d = parallelRouter{
+		d = sanitizeRouter{parallelRouter{
 			routers: []router{
 				&composableRouter{
 					providers: mr1,
 				},
 				mr2,
 			},
-		}
+		}}
+
+		privateAddr := mustMultiaddr(t, "/ip4/192.168.1.123/tcp/4001")
+		loopbackAddr := mustMultiaddr(t, "/ip4/127.0.0.1/tcp/4001")
+		publicAddr := mustMultiaddr(t, "/ip4/137.21.14.12/tcp/4001")
 
 		go func() {
-			mr1Iter.ch <- iter.Result[types.Record]{Val: &types.PeerRecord{Schema: "peer", ID: &peers[0]}}
+			mr1Iter.ch <- iter.Result[types.Record]{Val: &types.PeerRecord{
+				Schema: "peer",
+				ID:     &peers[0],
+				Addrs:  []types.Multiaddr{privateAddr, loopbackAddr, publicAddr},
+			}}
 			mr2Iter.ch <- iter.Result[types.Record]{Val: &types.PeerRecord{Schema: "peer", ID: &peers[0]}}
 			mr1Iter.ch <- iter.Result[types.Record]{Val: &types.PeerRecord{Schema: "peer", ID: &peers[1]}}
 			mr1Iter.ch <- iter.Result[types.Record]{Val: &types.PeerRecord{Schema: "peer", ID: &peers[2]}}
@@ -326,6 +342,9 @@ func TestFindProviders(t *testing.T) {
 		results, err := iter.ReadAllResults(it)
 		require.NoError(t, err)
 		require.Len(t, results, 5)
+
+		require.Len(t, results[0].(*types.PeerRecord).Addrs, 1)
+		require.Equal(t, publicAddr.String(), results[0].(*types.PeerRecord).Addrs[0].String())
 	})
 
 	t.Run("Failed to Create All Iterators", func(t *testing.T) {

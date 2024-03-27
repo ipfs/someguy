@@ -168,7 +168,7 @@ func getCombinedRouting(endpoints []string, dht routing.Routing) (router, error)
 		routers = append(routers, clientRouter{Client: drclient})
 	}
 
-	return parallelRouter{
+	return sanitizeRouter{parallelRouter{
 		routers: append(routers, libp2pRouter{routing: dht}),
-	}, nil
+	}}, nil
 }
