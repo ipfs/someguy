@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sync"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/routing"
+	manet "github.com/multiformats/go-multiaddr/net"
 )
 
 type router interface {
@@ -310,7 +312,7 @@ type libp2pRouter struct {
 func (d libp2pRouter) FindProviders(ctx context.Context, key cid.Cid, limit int) (iter.ResultIter[types.Record], error) {
 	ctx, cancel := context.WithCancel(ctx)
 	ch := d.routing.FindProvidersAsync(ctx, key, limit)
-	return iter.ToResultIter[types.Record](&peerChanIter{
+	return iter.ToResultIter(&peerChanIter{
 		ch:     ch,
 		cancel: cancel,
 	}), nil
@@ -334,7 +336,7 @@ func (d libp2pRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (it
 		rec.Addrs = append(rec.Addrs, types.Multiaddr{Multiaddr: addr})
 	}
 
-	return iter.ToResultIter[*types.PeerRecord](iter.FromSlice[*types.PeerRecord]([]*types.PeerRecord{rec})), nil
+	return iter.ToResultIter(iter.FromSlice([]*types.PeerRecord{rec})), nil
 }
 
 func (d libp2pRouter) GetIPNS(ctx context.Context, name ipns.Name) (*ipns.Record, error) {
@@ -411,4 +413,84 @@ func (d clientRouter) FindProviders(ctx context.Context, cid cid.Cid, limit int)
 
 func (d clientRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
 	return d.Client.FindPeers(ctx, pid)
+}
+
+var _ server.ContentRouter = sanitizeRouter{}
+
+type sanitizeRouter struct {
+	router
+}
+
+func (r sanitizeRouter) FindProviders(ctx context.Context, key cid.Cid, limit int) (iter.ResultIter[types.Record], error) {
+	it, err := r.router.FindProviders(ctx, key, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	return iter.Map(it, func(v iter.Result[types.Record]) iter.Result[types.Record] {
+		if v.Err != nil || v.Val == nil {
+			return v
+		}
+
+		switch v.Val.GetSchema() {
+		case types.SchemaPeer:
+			result, ok := v.Val.(*types.PeerRecord)
+			if !ok {
+				logger.Errorw("problem casting find providers result", "Schema", v.Val.GetSchema(), "Type", reflect.TypeOf(v).String())
+				return v
+			}
+
+			result.Addrs = filterPrivateMultiaddr(result.Addrs)
+			v.Val = result
+
+		//lint:ignore SA1019 // ignore staticcheck
+		case types.SchemaBitswap:
+			//lint:ignore SA1019 // ignore staticcheck
+			result, ok := v.Val.(*types.BitswapRecord)
+			if !ok {
+				logger.Errorw("problem casting find providers result", "Schema", v.Val.GetSchema(), "Type", reflect.TypeOf(v).String())
+				return v
+			}
+
+			result.Addrs = filterPrivateMultiaddr(result.Addrs)
+			v.Val = result
+		}
+
+		return v
+	}), nil
+}
+
+func (r sanitizeRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
+	it, err := r.router.FindPeers(ctx, pid, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	return iter.Map(it, func(v iter.Result[*types.PeerRecord]) iter.Result[*types.PeerRecord] {
+		if v.Err != nil || v.Val == nil {
+			return v
+		}
+
+		v.Val.Addrs = filterPrivateMultiaddr(v.Val.Addrs)
+		return v
+	}), nil
+}
+
+//lint:ignore SA1019 // ignore staticcheck
+func (r sanitizeRouter) ProvideBitswap(ctx context.Context, req *server.BitswapWriteProvideRequest) (time.Duration, error) {
+	return 0, routing.ErrNotSupported
+}
+
+func filterPrivateMultiaddr(a []types.Multiaddr) []types.Multiaddr {
+	b := make([]types.Multiaddr, 0, len(a))
+
+	for _, addr := range a {
+		if manet.IsPrivateAddr(addr.Multiaddr) {
+			continue
+		}
+
+		b = append(b, addr)
+	}
+
+	return b
 }
