@@ -485,7 +485,7 @@ func filterPrivateMultiaddr(a []types.Multiaddr) []types.Multiaddr {
 	b := make([]types.Multiaddr, 0, len(a))
 
 	for _, addr := range a {
-		if manet.IsPrivateAddr(addr.Multiaddr) || manet.IsIPLoopback(addr.Multiaddr) {
+		if manet.IsPrivateAddr(addr.Multiaddr) {
 			continue
 		}
 
