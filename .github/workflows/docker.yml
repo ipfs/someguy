@@ -72,7 +72,7 @@ jobs:
           IMAGE_NAME: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         run: |
           echo "value<<EOF" >> $GITHUB_OUTPUT
-          ./docker/get-docker-tags.sh "$(date -u +%F)" >> $GITHUB_OUTPUT
+           ./.github/scripts/get-docker-tags.sh "$(date -u +%F)" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
         shell: bash
       - name: Build Docker image and publish to Docker Hub
