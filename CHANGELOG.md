@@ -21,4 +21,6 @@ The following emojis are used to highlight certain changes:
 
 ### Fixed
 
+- Upgraded Boxo with fix to ensure that `/routing/v1/peers` endpoint accepts all variants of Peer IDs that are seen in the wild.
+
 ### Security
