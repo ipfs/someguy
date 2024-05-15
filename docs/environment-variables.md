@@ -8,6 +8,11 @@
   - [`SOMEGUY_PROVIDER_ENDPOINTS`](#someguy_provider_endpoints)
   - [`SOMEGUY_PEER_ENDPOINTS`](#someguy_peer_endpoints)
   - [`SOMEGUY_IPNS_ENDPOINTS`](#someguy_ipns_endpoints)
+  - [`SOMEGUY_CONNMGR_LOW`](#someguy_connmgr_low)
+  - [`SOMEGUY_CONNMGR_HIGH`](#someguy_connmgr_high)
+  - [`SOMEGUY_CONNMGR_GRACE_PERIOD`](#someguy_connmgr_grace_period)
+  - [`SOMEGUY_MAX_MEMORY`](#someguy_max_memory)
+  - [`SOMEGUY_MAX_FD`](#someguy_max_fd)
 - [Logging](#logging)
   - [`GOLOG_LOG_LEVEL`](#golog_log_level)
   - [`GOLOG_LOG_FMT`](#golog_log_fmt)
@@ -45,6 +50,36 @@ Default: none
 Comma-separated list of other Delegated Routing V1 endpoints to proxy IPNS requests to.
 
 Default: none
+
+### `SOMEGUY_CONNMGR_LOW`
+
+Minimum number of connections to keep.
+
+Default: 100
+
+### `SOMEGUY_CONNMGR_HIGH`
+
+Maximum number of connections to keep.
+
+Default: 100
+
+### `SOMEGUY_CONNMGR_GRACE_PERIOD`
+
+Minimum connection TTL.
+
+Default: 1m
+
+### `SOMEGUY_MAX_MEMORY`
+
+Maximum memory to use.
+
+Default: 0 (85% of the system's available RAM)
+
+### `SOMEGUY_MAX_FD`
+
+Maximum number of file descriptors.
+
+Default: 0 (50% of the process' limit)
 
 ## Logging
 
