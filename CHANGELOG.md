@@ -21,6 +21,12 @@ The following emojis are used to highlight certain changes:
 
 ### Fixed
 
+### Security
+
+## [v0.2.2]
+
+### Fixed
+
 - The `/routing/v1/peers` endpoint correctly filters out private addresses.
 
 ### Security
