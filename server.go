@@ -155,7 +155,7 @@ func newHost(highOutboundLimits bool) (host.Host, error) {
 
 func getCombinedRouting(endpoints []string, dht routing.Routing) (router, error) {
 	if len(endpoints) == 0 {
-		return libp2pRouter{routing: dht}, nil
+		return sanitizeRouter{libp2pRouter{routing: dht}}, nil
 	}
 
 	var routers []router
