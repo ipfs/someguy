@@ -11,12 +11,6 @@ The following emojis are used to highlight certain changes:
 * 🛠 - BREAKING CHANGE.  Action is required if you use this functionality.
 * ✨ - Noteworthy change to be aware of.
 
-## [v0.2.1]
-
-### Fixed
-
-- Upgraded Boxo with fix to ensure that `/routing/v1/peers` endpoint accepts all variants of Peer IDs that are seen in the wild.
-
 ## [Unreleased]
 
 ### Added
@@ -27,4 +21,12 @@ The following emojis are used to highlight certain changes:
 
 ### Fixed
 
+- The `/routing/v1/peers` endpoint correctly filters out private addresses.
+
 ### Security
+
+## [v0.2.1]
+
+### Fixed
+
+- Upgraded Boxo with fix to ensure that `/routing/v1/peers` endpoint accepts all variants of Peer IDs that are seen in the wild.
