@@ -8,6 +8,11 @@
   - [`SOMEGUY_PROVIDER_ENDPOINTS`](#someguy_provider_endpoints)
   - [`SOMEGUY_PEER_ENDPOINTS`](#someguy_peer_endpoints)
   - [`SOMEGUY_IPNS_ENDPOINTS`](#someguy_ipns_endpoints)
+  - [`SOMEGUY_LIBP2P_CONNMGR_LOW`](#someguy_libp2p_connmgr_low)
+  - [`SOMEGUY_LIBP2P_CONNMGR_HIGH`](#someguy_libp2p_connmgr_high)
+  - [`SOMEGUY_LIBP2P_CONNMGR_GRACE_PERIOD`](#someguy_libp2p_connmgr_grace_period)
+  - [`SOMEGUY_LIBP2P_MAX_MEMORY`](#someguy_libp2p_max_memory)
+  - [`SOMEGUY_LIBP2P_MAX_FD`](#someguy_libp2p_max_fd)
 - [Logging](#logging)
   - [`GOLOG_LOG_LEVEL`](#golog_log_level)
   - [`GOLOG_LOG_FMT`](#golog_log_fmt)
@@ -45,6 +50,36 @@ Default: none
 Comma-separated list of other Delegated Routing V1 endpoints to proxy IPNS requests to.
 
 Default: none
+
+### `SOMEGUY_LIBP2P_CONNMGR_LOW`
+
+Minimum number of libp2p connections to keep.
+
+Default: 100
+
+### `SOMEGUY_LIBP2P_CONNMGR_HIGH`
+
+Maximum number of libp2p connections to keep.
+
+Default: 3000
+
+### `SOMEGUY_LIBP2P_CONNMGR_GRACE_PERIOD`
+
+Minimum libp2p connection TTL.
+
+Default: 1m
+
+### `SOMEGUY_LIBP2P_MAX_MEMORY`
+
+Maximum memory to use for libp2p.
+
+Default: 0 (85% of the system's available RAM)
+
+### `SOMEGUY_LIBP2P_MAX_FD`
+
+Maximum number of file descriptors used by libp2p node.
+
+Default: 0 (50% of the process' limit)
 
 ## Logging
 

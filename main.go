@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log"
 	"os"
+	"time"
 
 	"github.com/ipfs/boxo/ipns"
 	"github.com/ipfs/go-cid"
@@ -53,9 +54,54 @@ func main() {
 						EnvVars: []string{"SOMEGUY_IPNS_ENDPOINTS"},
 						Usage:   "other Delegated Routing V1 endpoints to proxy IPNS requests to",
 					},
+					&cli.IntFlag{
+						Name:    "libp2p-connmgr-low",
+						Value:   100,
+						EnvVars: []string{"SOMEGUY_LIBP2P_CONNMGR_LOW"},
+						Usage:   "minimum number of libp2p connections to keep",
+					},
+					&cli.IntFlag{
+						Name:    "libp2p-connmgr-high",
+						Value:   3000,
+						EnvVars: []string{"SOMEGUY_LIBP2P_CONNMGR_HIGH"},
+						Usage:   "maximum number of libp2p connections to keep",
+					},
+					&cli.DurationFlag{
+						Name:    "libp2p-connmgr-grace",
+						Value:   time.Minute,
+						EnvVars: []string{"SOMEGUY_LIBP2P_CONNMGR_GRACE_PERIOD"},
+						Usage:   "minimum libp2p connection TTL",
+					},
+					&cli.Uint64Flag{
+						Name:    "libp2p-max-memory",
+						Value:   0,
+						EnvVars: []string{"SOMEGUY_LIBP2P_MAX_MEMORY"},
+						Usage:   "maximum memory to use for libp2p. Defaults to 85% of the system's available RAM",
+					},
+					&cli.Uint64Flag{
+						Name:    "libp2p-max-fd",
+						Value:   0,
+						EnvVars: []string{"SOMEGUY_LIBP2P_MAX_FD"},
+						Usage:   "maximum number of file descriptors used by libp2p node. Defaults to 50% of the process' limit",
+					},
 				},
 				Action: func(ctx *cli.Context) error {
-					return start(ctx.Context, ctx.String("listen-address"), ctx.Bool("accelerated-dht"), ctx.StringSlice("provider-endpoints"), ctx.StringSlice("peer-endpoints"), ctx.StringSlice("ipns-endpoints"))
+					cfg := &config{
+						listenAddress:        ctx.String("listen-address"),
+						acceleratedDHTClient: ctx.Bool("accelerated-dht"),
+
+						contentEndpoints: ctx.StringSlice("provider-endpoints"),
+						peerEndpoints:    ctx.StringSlice("peer-endpoints"),
+						ipnsEndpoints:    ctx.StringSlice("ipns-endpoints"),
+
+						connMgrLow:   ctx.Int("libp2p-connmgr-low"),
+						connMgrHi:    ctx.Int("libp2p-connmgr-high"),
+						connMgrGrace: ctx.Duration("libp2p-connmgr-grace"),
+						maxMemory:    ctx.Uint64("libp2p-max-memory"),
+						maxFD:        ctx.Int("libp2p-max-fd"),
+					}
+
+					return start(ctx.Context, cfg)
 				},
 			},
 			{

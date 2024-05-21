@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/CAFxX/httpcompression"
 	"github.com/felixge/httpsnoop"
@@ -16,7 +17,7 @@ import (
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/routing"
-	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
+	"github.com/libp2p/go-libp2p/p2p/net/connmgr"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
 	metrics "github.com/slok/go-http-metrics/metrics/prometheus"
@@ -33,14 +34,29 @@ func withRequestLogger(next http.Handler) http.Handler {
 	})
 }
 
-func start(ctx context.Context, listenAddress string, runAcceleratedDHTClient bool, contentEndpoints, peerEndpoints, ipnsEndpoints []string) error {
-	h, err := newHost(runAcceleratedDHTClient)
+type config struct {
+	listenAddress        string
+	acceleratedDHTClient bool
+
+	contentEndpoints []string
+	peerEndpoints    []string
+	ipnsEndpoints    []string
+
+	connMgrLow   int
+	connMgrHi    int
+	connMgrGrace time.Duration
+	maxMemory    uint64
+	maxFD        int
+}
+
+func start(ctx context.Context, cfg *config) error {
+	h, err := newHost(cfg)
 	if err != nil {
 		return err
 	}
 
 	var dhtRouting routing.Routing
-	if runAcceleratedDHTClient {
+	if cfg.acceleratedDHTClient {
 		wrappedDHT, err := newBundledDHT(ctx, h)
 		if err != nil {
 			return err
@@ -54,28 +70,28 @@ func start(ctx context.Context, listenAddress string, runAcceleratedDHTClient bo
 		dhtRouting = standardDHT
 	}
 
-	crRouters, err := getCombinedRouting(contentEndpoints, dhtRouting)
+	crRouters, err := getCombinedRouting(cfg.contentEndpoints, dhtRouting)
 	if err != nil {
 		return err
 	}
 
-	prRouters, err := getCombinedRouting(peerEndpoints, dhtRouting)
+	prRouters, err := getCombinedRouting(cfg.peerEndpoints, dhtRouting)
 	if err != nil {
 		return err
 	}
 
-	ipnsRouters, err := getCombinedRouting(ipnsEndpoints, dhtRouting)
+	ipnsRouters, err := getCombinedRouting(cfg.ipnsEndpoints, dhtRouting)
 	if err != nil {
 		return err
 	}
 
-	_, port, err := net.SplitHostPort(listenAddress)
+	_, port, err := net.SplitHostPort(cfg.listenAddress)
 	if err != nil {
 		return err
 	}
 
 	log.Printf("Starting %s %s\n", name, version)
-	log.Printf("Listening on %s", listenAddress)
+	log.Printf("Listening on %s", cfg.listenAddress)
 	log.Printf("Delegated Routing API on http://127.0.0.1:%s/routing/v1", port)
 
 	mdlw := middleware.New(middleware.Config{
@@ -115,37 +131,25 @@ func start(ctx context.Context, listenAddress string, runAcceleratedDHTClient bo
 	})
 	http.Handle("/", handler)
 
-	server := &http.Server{Addr: listenAddress, Handler: nil}
+	server := &http.Server{Addr: cfg.listenAddress, Handler: nil}
 	return server.ListenAndServe()
 }
 
-func newHost(highOutboundLimits bool) (host.Host, error) {
-	if !highOutboundLimits {
-		return libp2p.New()
-	}
-
-	defaultLimits := rcmgr.DefaultLimits
-	libp2p.SetDefaultServiceLimits(&defaultLimits)
-	// Outbound conns and FDs are set very high to allow for the accelerated DHT client to (re)load its routing table.
-	// Currently it doesn't gracefully handle RM throttling--once it does we can lower these.
-	// High outbound conn limits are considered less of a DoS risk than high inbound conn limits.
-	// Also note that, due to the behavior of the accelerated DHT client, we don't need many streams, just conns.
-	if minOutbound := 65536; defaultLimits.SystemBaseLimit.ConnsOutbound < minOutbound {
-		defaultLimits.SystemBaseLimit.ConnsOutbound = minOutbound
-		if defaultLimits.SystemBaseLimit.Conns < defaultLimits.SystemBaseLimit.ConnsOutbound {
-			defaultLimits.SystemBaseLimit.Conns = defaultLimits.SystemBaseLimit.ConnsOutbound
-		}
-	}
-	if minFD := 4096; defaultLimits.SystemBaseLimit.FD < minFD {
-		defaultLimits.SystemBaseLimit.FD = minFD
-	}
-	defaultLimitConfig := defaultLimits.AutoScale()
-
-	rm, err := rcmgr.NewResourceManager(rcmgr.NewFixedLimiter(defaultLimitConfig))
+func newHost(cfg *config) (host.Host, error) {
+	cmgr, err := connmgr.NewConnManager(cfg.connMgrLow, cfg.connMgrHi, connmgr.WithGracePeriod(cfg.connMgrGrace))
 	if err != nil {
 		return nil, err
 	}
-	h, err := libp2p.New(libp2p.ResourceManager(rm))
+
+	rcmgr, err := makeResourceMgrs(cfg.maxMemory, cfg.maxFD, cfg.connMgrHi)
+	if err != nil {
+		return nil, err
+	}
+
+	h, err := libp2p.New(
+		libp2p.ConnectionManager(cmgr),
+		libp2p.ResourceManager(rcmgr),
+	)
 	if err != nil {
 		return nil, err
 	}
