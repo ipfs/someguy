@@ -1,8 +1,6 @@
 package main
 
 import (
-	"log"
-
 	"github.com/dustin/go-humanize"
 	"github.com/pbnjay/memory"
 
@@ -142,7 +140,7 @@ func makeResourceManagerConfig(maxMemory uint64, maxFD int, connMgrHighWater int
 		partialLimits.System.ConnsInbound = rcmgr.LimitVal(maxInboundConns)
 	}
 
-	log.Printf(`
+	logger.Infof(`
 
 go-libp2p Resource Manager limits based on:
     - --max-memory: %s
