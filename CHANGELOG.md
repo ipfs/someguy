@@ -17,13 +17,17 @@ The following emojis are used to highlight certain changes:
 
 ### Changed
 
-- The resource manager's defaults have been improved based on Rainbow's and Kubo's defaults. In addition, you can now customize a few options using flags, or [environment variables](./docs/environment-variables.md).
-
 ### Removed
 
 ### Fixed
 
 ### Security
+
+## [v0.2.3]
+
+### Changed
+
+- The resource manager's defaults have been improved based on Rainbow's and Kubo's defaults. In addition, you can now customize a few options using flags, or [environment variables](./docs/environment-variables.md).
 
 ## [v0.2.2]
 
