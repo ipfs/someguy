@@ -1,8 +1,9 @@
 # Builder
-FROM --platform=${BUILDPLATFORM:-linux/amd64} golang:1.21-bookworm AS builder
+FROM --platform=${BUILDPLATFORM:-linux/amd64} golang:1.22-bookworm AS builder
 
 LABEL org.opencontainers.image.source=https://github.com/ipfs/someguy
-LABEL org.opencontainers.image.description="A standalone Delegated Routing V1 server"
+LABEL org.opencontainers.image.documentation=https://github.com/ipfs/someguy#docker
+LABEL org.opencontainers.image.description="A standalone delegated /routing/v1 HTTP server for IPFS systems"
 LABEL org.opencontainers.image.licenses=MIT+APACHE_2.0
 
 ARG TARGETPLATFORM TARGETOS TARGETARCH
