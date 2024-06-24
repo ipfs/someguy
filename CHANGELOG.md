@@ -21,6 +21,8 @@ The following emojis are used to highlight certain changes:
 
 ### Fixed
 
+- Release tag version is now included in `--version` output.
+
 ### Security
 
 ## [v0.2.3]
