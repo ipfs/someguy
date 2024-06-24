@@ -2,13 +2,19 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/CAFxX/httpcompression"
+	sddaemon "github.com/coreos/go-systemd/v22/daemon"
 	"github.com/felixge/httpsnoop"
 	"github.com/ipfs/boxo/routing/http/client"
 	"github.com/ipfs/boxo/routing/http/server"
@@ -90,9 +96,7 @@ func start(ctx context.Context, cfg *config) error {
 		return err
 	}
 
-	log.Printf("Starting %s %s\n", name, version)
-	log.Printf("Listening on %s", cfg.listenAddress)
-	log.Printf("Delegated Routing API on http://127.0.0.1:%s/routing/v1", port)
+	fmt.Printf("Starting %s %s\n", name, version)
 
 	mdlw := middleware.New(middleware.Config{
 		Recorder: metrics.NewRecorder(metrics.Config{Prefix: "someguy"}),
@@ -132,7 +136,39 @@ func start(ctx context.Context, cfg *config) error {
 	http.Handle("/", handler)
 
 	server := &http.Server{Addr: cfg.listenAddress, Handler: nil}
-	return server.ListenAndServe()
+	quit := make(chan os.Signal, 3)
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	fmt.Printf("Listening on %s\n", cfg.listenAddress)
+	fmt.Printf("Delegated Routing API on http://127.0.0.1:%s/routing/v1\n", port)
+
+	go func() {
+		defer wg.Done()
+		err := server.ListenAndServe()
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Fatalf("Failed to start /routing/v1 server: %v", err)
+			quit <- os.Interrupt
+		}
+	}()
+
+	sddaemon.SdNotify(false, sddaemon.SdNotifyReady)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	<-quit
+	sddaemon.SdNotify(false, sddaemon.SdNotifyStopping)
+	fmt.Printf("\nClosing /routing/v1 server...\n")
+
+	// Attempt a graceful shutdown
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		log.Fatalf("Graceful shutdown failed:%+v\n", err)
+	}
+
+	go server.Close()
+	wg.Wait()
+	fmt.Println("Shutdown finished.")
+	return nil
 }
 
 func newHost(cfg *config) (host.Host, error) {
