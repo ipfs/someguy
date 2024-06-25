@@ -27,7 +27,7 @@ The following emojis are used to highlight certain changes:
 
 ### Changed
 
-- boxo 0.21
+- boxo 0.21 `routing/http` fixes ([release notes](https://github.com/ipfs/boxo/releases/tag/v0.21.0))
 - go-libp2p 0.35
 
 ### Fixed
