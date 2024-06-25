@@ -17,17 +17,23 @@ The following emojis are used to highlight certain changes:
 
 ### Changed
 
+### Removed
+
+### Fixed
+
+### Security
+
+## [v0.3.0]
+
+### Changed
+
 - boxo 0.21
 - go-libp2p 0.35
-
-### Removed
 
 ### Fixed
 
 - `--version` now includes the release tag
 - `start` command supports a graceful shutdown and improved handling of interrupt signals
-
-### Security
 
 ## [v0.2.3]
 
