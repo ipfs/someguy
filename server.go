@@ -183,6 +183,7 @@ func newHost(cfg *config) (host.Host, error) {
 	}
 
 	h, err := libp2p.New(
+		libp2p.UserAgent("someguy/"+buildVersion()),
 		libp2p.ConnectionManager(cmgr),
 		libp2p.ResourceManager(rcmgr),
 	)

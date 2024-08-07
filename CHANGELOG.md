@@ -23,6 +23,17 @@ The following emojis are used to highlight certain changes:
 
 ### Security
 
+## [v0.4.0]
+
+### Changed
+
+- go-libp2p [0.36.1](https://github.com/libp2p/go-libp2p/releases/tag/v0.36.1)
+- boxo [0.22.0](https://github.com/ipfs/boxo/releases/tag/v0.22.0)
+
+### Fixed
+
+- [libp2p identify agentVersion](https://github.com/libp2p/specs/blob/master/identify/README.md#agentversion) correctly indicates someguy version
+
 ## [v0.3.0]
 
 ### Changed
