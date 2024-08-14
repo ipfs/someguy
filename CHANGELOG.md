@@ -23,6 +23,12 @@ The following emojis are used to highlight certain changes:
 
 ### Security
 
+## [v0.4.1]
+
+### Fixed
+
+- enabled NAT port map and Hole Punching to increase connectivity in non-public network topologies
+
 ## [v0.4.0]
 
 ### Changed

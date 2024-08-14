@@ -186,6 +186,10 @@ func newHost(cfg *config) (host.Host, error) {
 		libp2p.UserAgent("someguy/"+buildVersion()),
 		libp2p.ConnectionManager(cmgr),
 		libp2p.ResourceManager(rcmgr),
+		libp2p.NATPortMap(),
+		libp2p.DefaultTransports,
+		libp2p.DefaultMuxers,
+		libp2p.EnableHolePunching(),
 	)
 	if err != nil {
 		return nil, err
