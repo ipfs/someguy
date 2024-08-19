@@ -2,8 +2,10 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ipfs/boxo/ipns"
@@ -116,6 +118,13 @@ func main() {
 						maxFD:               ctx.Int("libp2p-max-fd"),
 					}
 
+					fmt.Printf("Starting %s %s\n", name, version)
+
+					fmt.Printf("SOMEGUY_ACCELERATED_DHT = %t\n", cfg.acceleratedDHTClient)
+					printIfListConfigured("SOMEGUY_PROVIDER_ENDPOINTS = ", cfg.contentEndpoints)
+					printIfListConfigured("SOMEGUY_PEER_ENDPOINTS = ", cfg.peerEndpoints)
+					printIfListConfigured("SOMEGUY_IPNS_ENDPOINTS = ", cfg.ipnsEndpoints)
+
 					return start(ctx.Context, cfg)
 				},
 			},
@@ -212,5 +221,11 @@ func main() {
 	err := app.Run(os.Args)
 	if err != nil {
 		log.Fatal(err)
+	}
+}
+
+func printIfListConfigured(message string, list []string) {
+	if len(list) > 0 {
+		fmt.Printf(message+"%v\n", strings.Join(list, ", "))
 	}
 }

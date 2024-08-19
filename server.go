@@ -62,6 +62,7 @@ func start(ctx context.Context, cfg *config) error {
 		return err
 	}
 
+	fmt.Printf("Someguy libp2p host listening on %v\n", h.Addrs())
 	var dhtRouting routing.Routing
 	if cfg.acceleratedDHTClient {
 		wrappedDHT, err := newBundledDHT(ctx, h)
@@ -96,8 +97,6 @@ func start(ctx context.Context, cfg *config) error {
 	if err != nil {
 		return err
 	}
-
-	fmt.Printf("Starting %s %s\n", name, version)
 
 	mdlw := middleware.New(middleware.Config{
 		Recorder: metrics.NewRecorder(metrics.Config{Prefix: "someguy"}),
@@ -141,7 +140,6 @@ func start(ctx context.Context, cfg *config) error {
 	var wg sync.WaitGroup
 	wg.Add(1)
 
-	fmt.Printf("Listening on %s\n", cfg.listenAddress)
 	fmt.Printf("Delegated Routing API on http://127.0.0.1:%s/routing/v1\n", port)
 
 	go func() {
