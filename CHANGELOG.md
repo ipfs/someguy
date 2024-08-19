@@ -23,6 +23,16 @@ The following emojis are used to highlight certain changes:
 
 ### Security
 
+## [v0.4.1]
+
+### Added
+
+- `SOMEGUY_LIBP2P_LISTEN_ADDRS` config [environment variable](./docs/environment-variables.md#someguy_libp2p_listen_addrs) for customizing the interfaces, ports, and transports of the libp2p host created by someguy.
+
+### Fixed
+
+- enabled NAT port map and Hole Punching to increase connectivity in non-public network topologies
+
 ## [v0.4.0]
 
 ### Changed

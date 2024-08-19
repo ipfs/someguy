@@ -8,6 +8,7 @@
   - [`SOMEGUY_PROVIDER_ENDPOINTS`](#someguy_provider_endpoints)
   - [`SOMEGUY_PEER_ENDPOINTS`](#someguy_peer_endpoints)
   - [`SOMEGUY_IPNS_ENDPOINTS`](#someguy_ipns_endpoints)
+  - [`SOMEGUY_LIBP2P_LISTEN_ADDRS`](#someguy_libp2p_listen_addrs)
   - [`SOMEGUY_LIBP2P_CONNMGR_LOW`](#someguy_libp2p_connmgr_low)
   - [`SOMEGUY_LIBP2P_CONNMGR_HIGH`](#someguy_libp2p_connmgr_high)
   - [`SOMEGUY_LIBP2P_CONNMGR_GRACE_PERIOD`](#someguy_libp2p_connmgr_grace_period)
@@ -50,6 +51,12 @@ Default: none
 Comma-separated list of other Delegated Routing V1 endpoints to proxy IPNS requests to.
 
 Default: none
+
+### `SOMEGUY_LIBP2P_LISTEN_ADDRS`
+
+Multiaddresses for libp2p host to listen on (comma-separated).
+
+Default: `someguy start --help`
 
 ### `SOMEGUY_LIBP2P_CONNMGR_LOW`
 
