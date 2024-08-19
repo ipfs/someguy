@@ -54,6 +54,20 @@ func main() {
 						EnvVars: []string{"SOMEGUY_IPNS_ENDPOINTS"},
 						Usage:   "other Delegated Routing V1 endpoints to proxy IPNS requests to",
 					},
+					&cli.StringSliceFlag{
+						Name: "libp2p-listen-addrs",
+						Value: cli.NewStringSlice(
+							"/ip4/0.0.0.0/tcp/4004",
+							"/ip4/0.0.0.0/udp/4004/quic-v1",
+							"/ip4/0.0.0.0/udp/4004/webrtc-direct",
+							"/ip4/0.0.0.0/udp/4004/quic-v1/webtransport",
+							"/ip6/::/tcp/4004",
+							"/ip6/::/udp/4004/quic-v1",
+							"/ip6/::/udp/4004/webrtc-direct",
+							"/ip6/::/udp/4004/quic-v1/webtransport"),
+						EnvVars: []string{"SOMEGUY_LIBP2P_LISTEN_ADDRS"},
+						Usage:   "Multiaddresses for libp2p host to listen on (comma-separated)",
+					},
 					&cli.IntFlag{
 						Name:    "libp2p-connmgr-low",
 						Value:   100,
@@ -94,11 +108,12 @@ func main() {
 						peerEndpoints:    ctx.StringSlice("peer-endpoints"),
 						ipnsEndpoints:    ctx.StringSlice("ipns-endpoints"),
 
-						connMgrLow:   ctx.Int("libp2p-connmgr-low"),
-						connMgrHi:    ctx.Int("libp2p-connmgr-high"),
-						connMgrGrace: ctx.Duration("libp2p-connmgr-grace"),
-						maxMemory:    ctx.Uint64("libp2p-max-memory"),
-						maxFD:        ctx.Int("libp2p-max-fd"),
+						libp2pListenAddress: ctx.StringSlice("libp2p-listen-addrs"),
+						connMgrLow:          ctx.Int("libp2p-connmgr-low"),
+						connMgrHi:           ctx.Int("libp2p-connmgr-high"),
+						connMgrGrace:        ctx.Duration("libp2p-connmgr-grace"),
+						maxMemory:           ctx.Uint64("libp2p-max-memory"),
+						maxFD:               ctx.Int("libp2p-max-fd"),
 					}
 
 					return start(ctx.Context, cfg)

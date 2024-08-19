@@ -48,11 +48,12 @@ type config struct {
 	peerEndpoints    []string
 	ipnsEndpoints    []string
 
-	connMgrLow   int
-	connMgrHi    int
-	connMgrGrace time.Duration
-	maxMemory    uint64
-	maxFD        int
+	libp2pListenAddress []string
+	connMgrLow          int
+	connMgrHi           int
+	connMgrGrace        time.Duration
+	maxMemory           uint64
+	maxFD               int
 }
 
 func start(ctx context.Context, cfg *config) error {
@@ -182,15 +183,25 @@ func newHost(cfg *config) (host.Host, error) {
 		return nil, err
 	}
 
-	h, err := libp2p.New(
-		libp2p.UserAgent("someguy/"+buildVersion()),
+	opts := []libp2p.Option{
+		libp2p.UserAgent("someguy/" + buildVersion()),
 		libp2p.ConnectionManager(cmgr),
 		libp2p.ResourceManager(rcmgr),
 		libp2p.NATPortMap(),
 		libp2p.DefaultTransports,
 		libp2p.DefaultMuxers,
 		libp2p.EnableHolePunching(),
-	)
+	}
+
+	if len(cfg.libp2pListenAddress) == 0 {
+		// Note: because the transports are set above we must also set the listen addresses
+		// We need to set listen addresses in order for hole punching to work
+		opts = append(opts, libp2p.DefaultListenAddrs)
+	} else {
+		opts = append(opts, libp2p.ListenAddrStrings(cfg.libp2pListenAddress...))
+	}
+
+	h, err := libp2p.New(opts...)
 	if err != nil {
 		return nil, err
 	}
