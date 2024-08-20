@@ -27,11 +27,11 @@ The following emojis are used to highlight certain changes:
 
 ### Added
 
-- `SOMEGUY_LIBP2P_LISTEN_ADDRS` config [environment variable](./docs/environment-variables.md#someguy_libp2p_listen_addrs) for customizing the interfaces, ports, and transports of the libp2p host created by someguy.
+- `SOMEGUY_LIBP2P_LISTEN_ADDRS` config [environment variable](./docs/environment-variables.md#someguy_libp2p_listen_addrs) for customizing the interfaces, ports, and transports of the libp2p host created by someguy. [#79](https://github.com/ipfs/someguy/pull/79)
 
 ### Fixed
 
-- enabled NAT port map and Hole Punching to increase connectivity in non-public network topologies
+- enabled NAT port map and Hole Punching to increase connectivity in non-public network topologies [#79](https://github.com/ipfs/someguy/pull/79)
 
 ## [v0.4.0]
 
