@@ -23,6 +23,12 @@ The following emojis are used to highlight certain changes:
 
 ### Security
 
+## [v0.4.2]
+
+### Fixed
+
+- [go-libp2p-kad-dht v0.26.1](https://github.com/libp2p/go-libp2p-kad-dht/releases/tag/v0.26.1) fixes a bug where `FindPeer` did not return results for peers behind NAT which only have p2p-circuit multiaddrs. [#80](https://github.com/ipfs/someguy/pull/80)
+
 ## [v0.4.1]
 
 ### Added
