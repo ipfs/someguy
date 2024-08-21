@@ -13,7 +13,7 @@ require (
 	github.com/ipfs/go-cid v0.4.1
 	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/libp2p/go-libp2p v0.36.2
-	github.com/libp2p/go-libp2p-kad-dht v0.26.0
+	github.com/libp2p/go-libp2p-kad-dht v0.26.1
 	github.com/libp2p/go-libp2p-record v0.2.0
 	github.com/multiformats/go-multiaddr v0.13.0
 	github.com/multiformats/go-multibase v0.2.0
