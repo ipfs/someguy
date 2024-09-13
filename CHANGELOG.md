@@ -23,6 +23,17 @@ The following emojis are used to highlight certain changes:
 
 ### Security
 
+## [0.5.0]
+
+### Added
+
+- Added support for IPIP-484 which allows filtering network transports (addresses) and transfer protocols (bitswap, etc) in the `/routing/v1/providers` endpoint.
+
+### Changed
+
+- [go-libp2p 0.36.3](https://github.com/libp2p/go-libp2p/releases/tag/v0.36.3)
+- [Boxo v0.24.0](#TODO)
+
 ## [v0.4.2]
 
 ### Fixed
