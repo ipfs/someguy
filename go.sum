@@ -189,6 +189,8 @@ github.com/huin/goupnp v1.3.0/go.mod h1:gnGPsThkYa7bFi/KWmEysQRf48l2dvR5bxr2OFck
 github.com/inconshreveable/mousetrap v1.0.0/go.mod h1:PxqpIevigyE2G7u3NXJIT2ANytuPF1OarO4DADm73n8=
 github.com/ipfs/boxo v0.22.0 h1:QTC+P5uhsBNq6HzX728nsLyFW6rYDeR/5hggf9YZX78=
 github.com/ipfs/boxo v0.22.0/go.mod h1:yp1loimX0BDYOR0cyjtcXHv15muEh5V1FqO2QLlzykw=
+github.com/ipfs/boxo v0.23.1-0.20240912160352-30b853cbda65 h1:8nCjoV1M/JK+tlCxokX2EY5mer2kCh26TbYuyVKzFJU=
+github.com/ipfs/boxo v0.23.1-0.20240912160352-30b853cbda65/go.mod h1:ulu5I6avTmgGmvjuCaBRKwsaOOKjBfQw1EiOOQp8M6E=
 github.com/ipfs/go-block-format v0.2.0 h1:ZqrkxBA2ICbDRbK8KJs/u0O3dlp6gmAuuXUJNiW1Ycs=
 github.com/ipfs/go-block-format v0.2.0/go.mod h1:+jpL11nFx5A/SPpsoBn6Bzkra/zaArfSmsknbPMYgzM=
 github.com/ipfs/go-cid v0.0.3/go.mod h1:GHWU/WuQdMPmIosc4Yn1bcCT7dSeX4lBafM7iqUPQvM=
@@ -271,6 +273,7 @@ github.com/libp2p/go-flow-metrics v0.1.0 h1:0iPhMI8PskQwzh57jB9WxIuIOQ0r+15PChFG
 github.com/libp2p/go-flow-metrics v0.1.0/go.mod h1:4Xi8MX8wj5aWNDAZttg6UPmc0ZrnFNsMtpsYUClFtro=
 github.com/libp2p/go-libp2p v0.36.2 h1:BbqRkDaGC3/5xfaJakLV/BrpjlAuYqSB0lRvtzL3B/U=
 github.com/libp2p/go-libp2p v0.36.2/go.mod h1:XO3joasRE4Eup8yCTTP/+kX+g92mOgRaadk46LmPhHY=
+github.com/libp2p/go-libp2p v0.36.3/go.mod h1:4Y5vFyCUiJuluEPmpnKYf6WFx5ViKPUYs/ixe9ANFZ8=
 github.com/libp2p/go-libp2p-asn-util v0.4.1 h1:xqL7++IKD9TBFMgnLPZR6/6iYhawHKHl950SO9L6n94=
 github.com/libp2p/go-libp2p-asn-util v0.4.1/go.mod h1:d/NI6XZ9qxw67b4e+NgpQexCIiFYJjErASrYW4PFDN8=
 github.com/libp2p/go-libp2p-core v0.2.4/go.mod h1:STh4fdfa5vDYr0/SzYYeqnt+E6KfEV5VxfIrm0bcI0g=
