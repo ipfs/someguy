@@ -23,11 +23,11 @@ The following emojis are used to highlight certain changes:
 
 ### Security
 
-## [0.5.0]
+## [v0.5.0]
 
 ### Added
 
-- Added support for IPIP-484 which allows filtering network transports (addresses) and transfer protocols (bitswap, etc) in the `/routing/v1/providers` endpoint.
+- Added support for [IPIP-484](https://github.com/ipfs/specs/pull/484) which allows filtering network transports (addresses) and transfer protocols (bitswap, etc) in `/routing/v1/` responses. [#82](https://github.com/ipfs/someguy/pull/82/)
 
 ### Changed
 

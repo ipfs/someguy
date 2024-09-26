@@ -9,7 +9,7 @@ require (
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/dustin/go-humanize v1.0.1
 	github.com/felixge/httpsnoop v1.0.4
-	github.com/ipfs/boxo v0.23.1-0.20240912160352-30b853cbda65
+	github.com/ipfs/boxo v0.23.1-0.20240925172435-61b5def3ba2a
 	github.com/ipfs/go-cid v0.4.1
 	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/libp2p/go-libp2p v0.36.3
