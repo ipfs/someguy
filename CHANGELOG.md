@@ -32,7 +32,7 @@ The following emojis are used to highlight certain changes:
 ### Changed
 
 - [go-libp2p 0.36.3](https://github.com/libp2p/go-libp2p/releases/tag/v0.36.3)
-- [Boxo v0.24.0](#TODO)
+- [Boxo v0.24.0](https://github.com/ipfs/boxo/releases/tag/v0.24.0)
 
 ## [v0.4.2]
 
