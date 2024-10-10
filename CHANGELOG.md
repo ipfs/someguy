@@ -23,6 +23,17 @@ The following emojis are used to highlight certain changes:
 
 ### Security
 
+## [v0.5.0]
+
+### Added
+
+- Added support for [IPIP-484](https://github.com/ipfs/specs/pull/484) which allows filtering network transports (addresses) and transfer protocols (bitswap, etc) in `/routing/v1/` responses. [#82](https://github.com/ipfs/someguy/pull/82/)
+
+### Changed
+
+- [go-libp2p 0.36.5](https://github.com/libp2p/go-libp2p/releases/tag/v0.36.5)
+- [Boxo v0.24.0](https://github.com/ipfs/boxo/releases/tag/v0.24.0)
+
 ## [v0.4.2]
 
 ### Fixed
