@@ -2,8 +2,6 @@ module github.com/ipfs/someguy
 
 go 1.22
 
-toolchain go1.22.4
-
 require (
 	github.com/CAFxX/httpcompression v0.0.9
 	github.com/coreos/go-systemd/v22 v22.5.0
@@ -12,7 +10,7 @@ require (
 	github.com/ipfs/boxo v0.24.0
 	github.com/ipfs/go-cid v0.4.1
 	github.com/ipfs/go-log/v2 v2.5.1
-	github.com/libp2p/go-libp2p v0.36.4
+	github.com/libp2p/go-libp2p v0.36.5
 	github.com/libp2p/go-libp2p-kad-dht v0.26.1
 	github.com/libp2p/go-libp2p-record v0.2.0
 	github.com/multiformats/go-multiaddr v0.13.0
