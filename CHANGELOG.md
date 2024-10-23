@@ -23,7 +23,7 @@ The following emojis are used to highlight certain changes:
 
 ### Security
 
-## [v0.5.1]
+## [v0.5.2]
 
 ### Changed
 
