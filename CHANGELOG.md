@@ -23,6 +23,13 @@ The following emojis are used to highlight certain changes:
 
 ### Security
 
+## [v0.5.1]
+
+### Changed
+
+- [go-libp2p 0.37.0](https://github.com/libp2p/go-libp2p/releases/tag/v0.37.0)
+- [boxo v0.24.1](https://github.com/ipfs/boxo/releases/tag/v0.24.1)
+
 ## [v0.5.0]
 
 ### Added
