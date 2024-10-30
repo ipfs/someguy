@@ -217,12 +217,9 @@ func getCombinedRouting(endpoints []string, dht routing.Routing) (router, error)
 	for _, endpoint := range endpoints {
 		drclient, err := drclient.New(endpoint,
 			drclient.WithUserAgent("someguy/"+buildVersion()),
-			drclient.WithProtocolFilter([]string{
-				"unknown", // allow results without protocol list, allowing end user to do libp2p Identify probe to test them
-				"transport-bitswap",
-				"transport-ipfs-gateway-http",
-			}),
-			drclient.WithDisabledLocalFiltering(false), // force local filtering in case remote server does not support IPIP-484
+			// override default filters, we want all results from remote endpoint, then someguy's user can use IPIP-484 to narrow them down
+			drclient.WithProtocolFilter([]string{}),
+			drclient.WithDisabledLocalFiltering(true),
 		)
 		if err != nil {
 			return nil, err
