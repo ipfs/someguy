@@ -13,7 +13,6 @@ var versionJSON []byte
 
 var name = "someguy"
 var version = buildVersion()
-var userAgent = name + "/" + version
 
 func buildVersion() string {
 	// Read version from embedded JSON file.
