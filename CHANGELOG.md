@@ -27,7 +27,7 @@ The following emojis are used to highlight certain changes:
 
 ### Fixed
 
-- default config: restore proxying `transport-ipfs-gateway-http` results from IPNI at `cid.contact` [#83](https://github.com/ipfs/someguy/pull/85)
+- default config: restore proxying of all results from IPNI at `cid.contact` [#83](https://github.com/ipfs/someguy/pull/85)
 
 ## [v0.5.2]
 
