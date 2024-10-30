@@ -23,6 +23,12 @@ The following emojis are used to highlight certain changes:
 
 ### Security
 
+## [v0.5.3]
+
+### Fixed
+
+- default config: restore proxying `transport-ipfs-gateway-http` results from IPNI at `cid.contact` [#83](https://github.com/ipfs/someguy/pull/85)
+
 ## [v0.5.2]
 
 ### Changed
