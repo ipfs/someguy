@@ -16,7 +16,7 @@ import (
 	"github.com/CAFxX/httpcompression"
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
 	"github.com/felixge/httpsnoop"
-	"github.com/ipfs/boxo/routing/http/client"
+	drclient "github.com/ipfs/boxo/routing/http/client"
 	"github.com/ipfs/boxo/routing/http/server"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p"
@@ -215,7 +215,15 @@ func getCombinedRouting(endpoints []string, dht routing.Routing) (router, error)
 	var routers []router
 
 	for _, endpoint := range endpoints {
-		drclient, err := client.New(endpoint, client.WithUserAgent(userAgent))
+		drclient, err := drclient.New(endpoint,
+			drclient.WithUserAgent("someguy/"+buildVersion()),
+			drclient.WithProtocolFilter([]string{
+				"unknown", // allow results without protocol list, allowing end user to do libp2p Identify probe to test them
+				"transport-bitswap",
+				"transport-ipfs-gateway-http",
+			}),
+			drclient.WithDisabledLocalFiltering(false), // force local filtering in case remote server does not support IPIP-484
+		)
 		if err != nil {
 			return nil, err
 		}
