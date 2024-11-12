@@ -99,7 +99,10 @@ func start(ctx context.Context, cfg *config) error {
 	}
 
 	mdlw := middleware.New(middleware.Config{
-		Recorder: metrics.NewRecorder(metrics.Config{Prefix: "someguy"}),
+		Recorder: metrics.NewRecorder(metrics.Config{
+			Prefix:          "someguy",
+			DurationBuckets: []float64{0.05, 0.1, 0.5, 1, 5, 10, 20, 30, 40, 50, 60},
+		}),
 	})
 
 	handler := server.Handler(&composableRouter{
