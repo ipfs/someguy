@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 var logger = logging.Logger(name)
@@ -52,6 +53,9 @@ type config struct {
 	connMgrGrace        time.Duration
 	maxMemory           uint64
 	maxFD               int
+
+	tracingAuth      string
+	samplingFraction float64
 }
 
 func start(ctx context.Context, cfg *config) error {
@@ -96,6 +100,15 @@ func start(ctx context.Context, cfg *config) error {
 		return err
 	}
 
+	tp, err := SetupTracing(ctx, cfg.samplingFraction)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		_ = tp.Shutdown(ctx)
+	}()
+
 	handler := server.Handler(&composableRouter{
 		providers: crRouters,
 		peers:     prRouters,
@@ -119,12 +132,16 @@ func start(ctx context.Context, cfg *config) error {
 	// Add request logging.
 	handler = withRequestLogger(handler)
 
+	// Add request tracing
+	handler = withTracingAndDebug(handler, cfg.tracingAuth)
+
+	http.Handle("/", handler)
+
 	http.Handle("/debug/metrics/prometheus", promhttp.Handler())
 	http.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Client: %s\n", name)
 		fmt.Fprintf(w, "Version: %s\n", version)
 	})
-	http.Handle("/", handler)
 
 	server := &http.Server{Addr: cfg.listenAddress, Handler: nil}
 	quit := make(chan os.Signal, 3)
@@ -222,4 +239,23 @@ func getCombinedRouting(endpoints []string, dht routing.Routing) (router, error)
 	return sanitizeRouter{parallelRouter{
 		routers: append(routers, libp2pRouter{routing: dht}),
 	}}, nil
+}
+
+func withTracingAndDebug(next http.Handler, authToken string) http.Handler {
+	next = otelhttp.NewHandler(next, "someguy.request")
+
+	// Remove tracing and cache skipping headers if not authorized
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		// Disable tracing/debug headers if auth token missing or invalid
+		if authToken == "" || request.Header.Get("Authorization") != authToken {
+			if request.Header.Get("Traceparent") != "" {
+				request.Header.Del("Traceparent")
+			}
+			if request.Header.Get("Tracestate") != "" {
+				request.Header.Del("Tracestate")
+			}
+		}
+
+		next.ServeHTTP(writer, request)
+	})
 }

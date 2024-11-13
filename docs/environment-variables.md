@@ -19,6 +19,9 @@
   - [`GOLOG_LOG_FMT`](#golog_log_fmt)
   - [`GOLOG_FILE`](#golog_file)
   - [`GOLOG_TRACING_FILE`](#golog_tracing_file)
+- [Tracing](#tracing)
+  - [`SOMEGUY_SAMPLING_FRACTION`](#someguy_sampling_fraction)
+  - [`SOMEGUY_TRACING_AUTH`](#someguy_tracing_auth)
 
 ## Configuration
 
@@ -140,3 +143,22 @@ Sets the file to which the logs are saved. By default, they are printed to the s
 Sets the file to which the tracing events are sent. By default, tracing is disabled.
 
 Warning: Enabling tracing will likely affect performance.
+
+## Tracing
+
+See [tracing.md](tracing.md).
+
+### `SOMEGUY_TRACING_AUTH`
+
+Optional, setting to non-empty value enables on-demand tracing per-request.
+
+The ability to pass `Traceparent` or `Tracestate` headers is guarded by an
+`Authorization` header. The value of the `Authorization` header should match
+the value in the `SOMEGUY_TRACING_AUTH` environment variable.
+
+### `SOMEGUY_SAMPLING_FRACTION`
+
+Optional, set to 0 by default.
+
+The fraction (between 0 and 1) of requests that should be sampled.
+This is calculated independently of any Traceparent based sampling.
