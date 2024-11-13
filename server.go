@@ -24,11 +24,9 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/routing"
 	"github.com/libp2p/go-libp2p/p2p/net/connmgr"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
-	metrics "github.com/slok/go-http-metrics/metrics/prometheus"
-	"github.com/slok/go-http-metrics/middleware"
-	middlewarestd "github.com/slok/go-http-metrics/middleware/std"
 )
 
 var logger = logging.Logger(name)
@@ -98,18 +96,11 @@ func start(ctx context.Context, cfg *config) error {
 		return err
 	}
 
-	mdlw := middleware.New(middleware.Config{
-		Recorder: metrics.NewRecorder(metrics.Config{
-			Prefix:          "someguy",
-			DurationBuckets: []float64{0.05, 0.1, 0.5, 1, 5, 10, 20, 30, 40, 50, 60},
-		}),
-	})
-
 	handler := server.Handler(&composableRouter{
 		providers: crRouters,
 		peers:     prRouters,
 		ipns:      ipnsRouters,
-	})
+	}, server.WithPrometheusRegistry(prometheus.DefaultRegisterer))
 
 	// Add CORS.
 	handler = cors.New(cors.Options{
@@ -124,9 +115,6 @@ func start(ctx context.Context, cfg *config) error {
 		return err
 	}
 	handler = compress(handler)
-
-	// Add metrics.
-	handler = middlewarestd.Handler("/", mdlw, handler)
 
 	// Add request logging.
 	handler = withRequestLogger(handler)
@@ -143,6 +131,7 @@ func start(ctx context.Context, cfg *config) error {
 	var wg sync.WaitGroup
 	wg.Add(1)
 
+	fmt.Printf("Metrics endpoint: http://127.0.0.1:%s/debug/metrics/prometheus\n", port)
 	fmt.Printf("Delegated Routing API on http://127.0.0.1:%s/routing/v1\n", port)
 
 	go func() {
