@@ -132,9 +132,6 @@ func start(ctx context.Context, cfg *config) error {
 	// Add request logging.
 	handler = withRequestLogger(handler)
 
-	// Add request timeout
-	handler = http.TimeoutHandler(handler, 30*time.Second, "Request timed out")
-
 	// Add request tracing
 	handler = withTracingAndDebug(handler, cfg.tracingAuth)
 
