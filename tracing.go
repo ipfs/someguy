@@ -98,3 +98,17 @@ func CascadingSamplerFunc(shouldSample func(parameters trace.SamplingParameters)
 		description: description,
 	}
 }
+
+type funcSampler struct {
+	next        trace.Sampler
+	fn          func(trace.SamplingParameters) trace.SamplingResult
+	description string
+}
+
+func (f funcSampler) ShouldSample(parameters trace.SamplingParameters) trace.SamplingResult {
+	return f.fn(parameters)
+}
+
+func (f funcSampler) Description() string {
+	return f.description
+}
