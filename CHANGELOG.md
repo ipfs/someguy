@@ -15,6 +15,8 @@ The following emojis are used to highlight certain changes:
 
 ### Added
 
+- Add request tracing with sampling or require token for requests with Traceparent header. See [tracing.md](./docs/tracing.md) for more details.
+
 ### Changed
 
 ### Removed
