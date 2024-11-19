@@ -24,11 +24,10 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/routing"
 	"github.com/libp2p/go-libp2p/p2p/net/connmgr"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
-	metrics "github.com/slok/go-http-metrics/metrics/prometheus"
-	"github.com/slok/go-http-metrics/middleware"
-	middlewarestd "github.com/slok/go-http-metrics/middleware/std"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 var logger = logging.Logger(name)
@@ -36,7 +35,7 @@ var logger = logging.Logger(name)
 func withRequestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		m := httpsnoop.CaptureMetrics(next, w, r)
-		logger.Debugw(r.Method, "url", r.URL, "host", r.Host, "code", m.Code, "duration", m.Duration, "written", m.Written, "ua", r.UserAgent(), "referer", r.Referer())
+		logger.Debugw(r.Method, "url", r.URL, "host", r.Host, "code", m.Code, "duration", m.Duration, "written", m.Written, "accept", r.Header.Get("Accept"), "ua", r.UserAgent(), "referer", r.Referer())
 	})
 }
 
@@ -54,6 +53,9 @@ type config struct {
 	connMgrGrace        time.Duration
 	maxMemory           uint64
 	maxFD               int
+
+	tracingAuth      string
+	samplingFraction float64
 }
 
 func start(ctx context.Context, cfg *config) error {
@@ -98,15 +100,20 @@ func start(ctx context.Context, cfg *config) error {
 		return err
 	}
 
-	mdlw := middleware.New(middleware.Config{
-		Recorder: metrics.NewRecorder(metrics.Config{Prefix: "someguy"}),
-	})
+	tp, err := setupTracing(ctx, cfg.samplingFraction)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		_ = tp.Shutdown(ctx)
+	}()
 
 	handler := server.Handler(&composableRouter{
 		providers: crRouters,
 		peers:     prRouters,
 		ipns:      ipnsRouters,
-	})
+	}, server.WithPrometheusRegistry(prometheus.DefaultRegisterer))
 
 	// Add CORS.
 	handler = cors.New(cors.Options{
@@ -122,24 +129,26 @@ func start(ctx context.Context, cfg *config) error {
 	}
 	handler = compress(handler)
 
-	// Add metrics.
-	handler = middlewarestd.Handler("/", mdlw, handler)
-
 	// Add request logging.
 	handler = withRequestLogger(handler)
+
+	// Add request tracing
+	handler = withTracingAndDebug(handler, cfg.tracingAuth)
+
+	http.Handle("/", handler)
 
 	http.Handle("/debug/metrics/prometheus", promhttp.Handler())
 	http.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Client: %s\n", name)
 		fmt.Fprintf(w, "Version: %s\n", version)
 	})
-	http.Handle("/", handler)
 
 	server := &http.Server{Addr: cfg.listenAddress, Handler: nil}
 	quit := make(chan os.Signal, 3)
 	var wg sync.WaitGroup
 	wg.Add(1)
 
+	fmt.Printf("Metrics endpoint: http://127.0.0.1:%s/debug/metrics/prometheus\n", port)
 	fmt.Printf("Delegated Routing API on http://127.0.0.1:%s/routing/v1\n", port)
 
 	go func() {
@@ -230,4 +239,23 @@ func getCombinedRouting(endpoints []string, dht routing.Routing) (router, error)
 	return sanitizeRouter{parallelRouter{
 		routers: append(routers, libp2pRouter{routing: dht}),
 	}}, nil
+}
+
+func withTracingAndDebug(next http.Handler, authToken string) http.Handler {
+	next = otelhttp.NewHandler(next, "someguy.request")
+
+	// Remove tracing and cache skipping headers if not authorized
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		// Disable tracing/debug headers if auth token missing or invalid
+		if authToken == "" || request.Header.Get("Authorization") != authToken {
+			if request.Header.Get("Traceparent") != "" {
+				request.Header.Del("Traceparent")
+			}
+			if request.Header.Get("Tracestate") != "" {
+				request.Header.Del("Tracestate")
+			}
+		}
+
+		next.ServeHTTP(writer, request)
+	})
 }

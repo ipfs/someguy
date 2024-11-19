@@ -100,6 +100,18 @@ func main() {
 						EnvVars: []string{"SOMEGUY_LIBP2P_MAX_FD"},
 						Usage:   "maximum number of file descriptors used by libp2p node. Defaults to 50% of the process' limit",
 					},
+					&cli.StringFlag{
+						Name:    "tracing-auth",
+						Value:   "",
+						EnvVars: []string{"SOMEGUY_TRACING_AUTH"},
+						Usage:   "If set the key gates use of the Traceparent header by requiring the key to be passed in the Authorization header",
+					},
+					&cli.Float64Flag{
+						Name:    "sampling-fraction",
+						Value:   0,
+						EnvVars: []string{"SOMEGUY_SAMPLING_FRACTION"},
+						Usage:   "Rate at which to sample gateway requests. Does not include requests with traceheaders which will always sample",
+					},
 				},
 				Action: func(ctx *cli.Context) error {
 					cfg := &config{
@@ -116,6 +128,9 @@ func main() {
 						connMgrGrace:        ctx.Duration("libp2p-connmgr-grace"),
 						maxMemory:           ctx.Uint64("libp2p-max-memory"),
 						maxFD:               ctx.Int("libp2p-max-fd"),
+
+						tracingAuth:      ctx.String("tracing-auth"),
+						samplingFraction: ctx.Float64("sampling-fraction"),
 					}
 
 					fmt.Printf("Starting %s %s\n", name, version)
