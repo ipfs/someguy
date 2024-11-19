@@ -100,7 +100,7 @@ func start(ctx context.Context, cfg *config) error {
 		return err
 	}
 
-	tp, err := SetupTracing(ctx, cfg.samplingFraction)
+	tp, err := setupTracing(ctx, cfg.samplingFraction)
 	if err != nil {
 		return err
 	}
