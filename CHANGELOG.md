@@ -19,6 +19,9 @@ The following emojis are used to highlight certain changes:
 
 ### Changed
 
+- go-libp2p-kad-dht updated to [v0.28.1](https://github.com/libp2p/go-libp2p-kad-dht/releases/tag/v0.28.1)
+- Metrics `someguy_http_request_duration_seconds` and `someguy_http_response_size_bytes` were replaced with  `delegated_routing_server_http_request_duration_seconds` and `delegated_routing_server_http_response_size_bytes` from upstream `boxo/routing/http/server`.
+
 ### Removed
 
 ### Fixed

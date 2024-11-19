@@ -15,7 +15,7 @@ import (
 
 // SetupTracing sets up the tracing based on the OTEL_* environment variables,
 // It returns a trace.TracerProvider.
-func SetupTracing(ctx context.Context, traceFraction float64) (*trace.TracerProvider, error) {
+func setupTracing(ctx context.Context, traceFraction float64) (*trace.TracerProvider, error) {
 	tp, err := NewTracerProvider(ctx, traceFraction)
 	if err != nil {
 		return nil, err
