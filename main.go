@@ -38,6 +38,12 @@ func main() {
 						EnvVars: []string{"SOMEGUY_ACCELERATED_DHT"},
 						Usage:   "run the accelerated DHT client",
 					},
+					&cli.BoolFlag{
+						Name:    "cached-addr-book",
+						Value:   true,
+						EnvVars: []string{"SOMEGUY_CACHED_ADDR_BOOK"},
+						Usage:   "use separate cached address book instead of the one provided by the libp2p host",
+					},
 					&cli.StringSliceFlag{
 						Name:    "provider-endpoints",
 						Value:   cli.NewStringSlice(cidContactEndpoint),
