@@ -79,12 +79,18 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 			switch ev := ev.(type) {
 			case event.EvtPeerIdentificationCompleted:
 				// Update the peer state with the last connected address and time
-				cab.peers[ev.Peer] = &peerState{
-					lastConnTime:    time.Now(),
-					lastConnAddr:    ev.Conn.RemoteMultiaddr(),
-					returnCount:     atomic.Int32{},
-					connectFailures: atomic.Int32{},
+				if _, exists := cab.peers[ev.Peer]; !exists {
+					cab.peers[ev.Peer] = &peerState{
+						lastConnTime:    time.Now(),
+						lastConnAddr:    ev.Conn.RemoteMultiaddr(),
+						returnCount:     atomic.Int32{},
+						connectFailures: atomic.Int32{},
+					}
+				} else {
+					cab.peers[ev.Peer].lastConnTime = time.Now()
+					cab.peers[ev.Peer].lastConnAddr = ev.Conn.RemoteMultiaddr()
 				}
+
 				if ev.SignedPeerRecord != nil {
 					logger.Debug("Caching signed peer record")
 					cab, ok := peerstore.GetCertifiedAddrBook(cab.addrBook)
