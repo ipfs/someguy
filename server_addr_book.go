@@ -5,7 +5,6 @@ import (
 	"io"
 	"math"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/ipfs/boxo/routing/http/types"
@@ -29,19 +28,27 @@ const ConnectedAddrTTL = math.MaxInt64
 const PeerProbeThreshold = time.Hour
 
 // How often to run the probe peers function
-const ProbeInterval = time.Minute * 15
+const ProbeInterval = time.Minute * 5
+
+// How many concurrent probes to run at once
+const MaxConcurrentProbes = 20
+
+// How many connect failures to tolerate before clearing a peer's addresses
+const MaxConnectFailures = 3
 
 type peerState struct {
 	lastConnTime    time.Time    // time we were connected to this peer
 	lastConnAddr    ma.Multiaddr // last address we connected to this peer on
-	returnCount     atomic.Int32 // number of times we've returned this peer
-	connectFailures atomic.Int32 // number of times we've failed to connect to this peer
+	returnCount     int          // number of times we've returned this peer from the cache
+	lastReturnTime  time.Time    // time we last returned this peer from the cache
+	connectFailures int          // number of times we've failed to connect to this peer
 }
 
 type cachedAddrBook struct {
-	peers     map[peer.ID]*peerState // PeerID -> peer state
-	addrBook  peerstore.AddrBook     // PeerID -> []Multiaddr with TTL expirations
-	isProbing bool                   // Whether we are currently probing peers
+	mu        sync.RWMutex // Add mutex for thread safety
+	peers     map[peer.ID]*peerState
+	addrBook  peerstore.AddrBook
+	isProbing bool
 }
 
 func newCachedAddrBook() *cachedAddrBook {
@@ -82,10 +89,8 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 				// Update the peer state with the last connected address and time
 				if _, exists := cab.peers[ev.Peer]; !exists {
 					cab.peers[ev.Peer] = &peerState{
-						lastConnTime:    time.Now(),
-						lastConnAddr:    ev.Conn.RemoteMultiaddr(),
-						returnCount:     atomic.Int32{},
-						connectFailures: atomic.Int32{},
+						lastConnTime: time.Now(),
+						lastConnAddr: ev.Conn.RemoteMultiaddr(),
 					}
 				} else {
 					cab.peers[ev.Peer].lastConnTime = time.Now()
@@ -127,6 +132,7 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 			elapsed := time.Since(start)
 			logger.Debugf("Finished peer probe in %s", elapsed)
 		}
+		// TODO: Add some cleanup logic to remove peers that haven't been returned from the cache in a while or have failed to connect too many times
 	}
 }
 
@@ -136,6 +142,8 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 	defer func() { cab.isProbing = false }()
 
 	wg := sync.WaitGroup{}
+	// semaphore channel to limit the number of concurrent probes
+	semaphore := make(chan struct{}, MaxConcurrentProbes)
 
 	for i, p := range cab.addrBook.PeersWithAddrs() {
 		logger.Debugf("Probe %d: PeerID: %s", i+1, p)
@@ -143,8 +151,14 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 			continue // don't probe connected peers
 		}
 
-		if time.Since(cab.peers[p].lastConnTime) < PeerProbeThreshold {
+		peerState := cab.peers[p]
+
+		if time.Since(peerState.lastConnTime) < PeerProbeThreshold {
 			continue // don't probe peers below the probe threshold
+		}
+		if peerState.connectFailures > MaxConnectFailures {
+			cab.addrBook.ClearAddrs(p) // clear the peer's addresses
+			continue                   // don't probe this peer
 		}
 
 		addrs := cab.addrBook.Addrs(p)
@@ -156,10 +170,15 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 		addrs = ma.FilterAddrs(addrs, manet.IsPublicAddr)
 		wg.Add(1)
 		go func() {
-			defer wg.Done()
+			semaphore <- struct{}{}
+			defer func() {
+				<-semaphore // Release semaphore
+				wg.Done()
+			}()
+
 			ctx, cancel := context.WithTimeout(ctx, time.Second*10)
 			defer cancel()
-			// when connect succeeds and identify runs, the background loop will update the peer state and cache
+			// if connect succeeds and identify runs, the background loop will take care of updating the peer state and cache
 			err := host.Connect(ctx, peer.AddrInfo{
 				ID: p,
 				// TODO: Should we should probe the last connected address or all addresses?
@@ -167,8 +186,9 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 			})
 			if err != nil {
 				logger.Warnf("failed to connect to peer %s: %v", p, err)
-				cab.peers[p].connectFailures.Add(1)
-				cab.addrBook.ClearAddrs(p)
+				cab.mu.Lock() // Lock before accessing shared state
+				cab.peers[p].connectFailures++
+				cab.mu.Unlock()
 			}
 		}()
 	}
@@ -176,13 +196,22 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 }
 
 // Returns the cached addresses for a peer, incrementing the return count
-func (cab *cachedAddrBook) getCachedAddrs(p *peer.ID) []types.Multiaddr {
-	addrs := cab.addrBook.Addrs(*p)
-	cab.peers[*p].returnCount.Add(1) // increment the return count
+func (cab *cachedAddrBook) GetCachedAddrs(p *peer.ID) []types.Multiaddr {
+	cachedAddrs := cab.addrBook.Addrs(*p)
 
-	var cachedAddrs []types.Multiaddr
-	for _, addr := range addrs {
-		cachedAddrs = append(cachedAddrs, types.Multiaddr{Multiaddr: addr})
+	if len(cachedAddrs) == 0 {
+		return nil
 	}
-	return cachedAddrs
+
+	cab.mu.Lock() // Lock before accessing shared state
+	defer cab.mu.Unlock()
+	// Peer state should already exist if it's in the addrbook
+	cab.peers[*p].returnCount++
+	cab.peers[*p].lastReturnTime = time.Now()
+
+	var result []types.Multiaddr // convert to local Multiaddr type 🙃
+	for _, addr := range cachedAddrs {
+		result = append(result, types.Multiaddr{Multiaddr: addr})
+	}
+	return result
 }

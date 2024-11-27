@@ -40,7 +40,7 @@ func (r cachedRouter) FindProviders(ctx context.Context, key cid.Cid, limit int)
 				return v
 			}
 			if len(result.Addrs) == 0 {
-				cachedAddrs := r.cachedAddrBook.getCachedAddrs(result.ID)
+				cachedAddrs := r.cachedAddrBook.GetCachedAddrs(result.ID)
 				logger.Debugw("no addresses found for peer, using cached addresses", "peer", result.ID, "cachedAddrs", cachedAddrs)
 				result.Addrs = cachedAddrs
 			}
@@ -57,7 +57,7 @@ func (r cachedRouter) FindProviders(ctx context.Context, key cid.Cid, limit int)
 			}
 
 			if len(result.Addrs) == 0 {
-				cachedAddrs := r.cachedAddrBook.getCachedAddrs(result.ID)
+				cachedAddrs := r.cachedAddrBook.GetCachedAddrs(result.ID)
 				logger.Debugw("no addresses found for peer, using cached addresses", "peer", result.ID, "cachedAddrs", cachedAddrs)
 				result.Addrs = cachedAddrs
 			}
@@ -81,7 +81,7 @@ func (r cachedRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (it
 
 		// If no addresses were found by router, use cached addresses
 		if len(v.Val.Addrs) == 0 {
-			cachedAddrs := r.cachedAddrBook.getCachedAddrs(v.Val.ID)
+			cachedAddrs := r.cachedAddrBook.GetCachedAddrs(v.Val.ID)
 			logger.Debugw("no addresses found for peer, using cached addresses", "peer", v.Val.ID, "cachedAddrs", cachedAddrs)
 			v.Val.Addrs = cachedAddrs
 		}
