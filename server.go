@@ -236,9 +236,9 @@ func getCombinedRouting(endpoints []string, dht routing.Routing) (router, error)
 		routers = append(routers, clientRouter{Client: drclient})
 	}
 
-	return sanitizeRouter{parallelRouter{
-		routers: append(routers, libp2pRouter{routing: dht}),
-	}}, nil
+	return parallelRouter{
+		routers: append(routers, sanitizeRouter{libp2pRouter{routing: dht}}),
+	}, nil
 }
 
 func withTracingAndDebug(next http.Handler, authToken string) http.Handler {
