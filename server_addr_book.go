@@ -4,18 +4,19 @@ import (
 	"context"
 	"io"
 	"math"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/ipfs/boxo/routing/http/types"
-	ma "github.com/multiformats/go-multiaddr"
-
 	"github.com/libp2p/go-libp2p/core/event"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoremem"
+	ma "github.com/multiformats/go-multiaddr"
+	manet "github.com/multiformats/go-multiaddr/net"
 )
 
 // The TTL to keep recently connected peers for. This should be enough time to probe
@@ -134,41 +135,44 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 	cab.isProbing = true
 	defer func() { cab.isProbing = false }()
 
+	wg := sync.WaitGroup{}
+
 	for i, p := range cab.addrBook.PeersWithAddrs() {
 		logger.Debugf("Probe %d: PeerID: %s", i+1, p)
 		if host.Network().Connectedness(p) == network.Connected || host.Network().Connectedness(p) == network.Limited {
-			// No need to probe connected peers
-			continue
+			continue // don't probe connected peers
 		}
 
-		lastConnTime := cab.peers[p].lastConnTime
-
-		if time.Since(lastConnTime) < PeerProbeThreshold {
-			// Don't probe recently connected peers
-			continue
+		if time.Since(cab.peers[p].lastConnTime) < PeerProbeThreshold {
+			continue // don't probe peers below the probe threshold
 		}
 
 		addrs := cab.addrBook.Addrs(p)
 
 		if len(addrs) == 0 {
-			// No addresses to probe
-			continue
+			continue // no addresses to probe
 		}
 
-		// If connect succeeds and identify runs, the background loop will update the peer state and cache
-		// TODO: introduce some concurrency
-		ctx, cancel := context.WithTimeout(ctx, time.Second*10)
-		defer cancel()
-		err := host.Connect(ctx, peer.AddrInfo{
-			ID: p,
-			// TODO: Should we should probe the last connected address or all addresses?
-			Addrs: addrs,
-		})
-		if err != nil {
-			logger.Warnf("failed to connect to peer %s: %v", p, err)
-			cab.peers[p].connectFailures.Add(1)
-		}
+		addrs = ma.FilterAddrs(addrs, manet.IsPublicAddr)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(ctx, time.Second*10)
+			defer cancel()
+			// when connect succeeds and identify runs, the background loop will update the peer state and cache
+			err := host.Connect(ctx, peer.AddrInfo{
+				ID: p,
+				// TODO: Should we should probe the last connected address or all addresses?
+				Addrs: addrs,
+			})
+			if err != nil {
+				logger.Warnf("failed to connect to peer %s: %v", p, err)
+				cab.peers[p].connectFailures.Add(1)
+				cab.addrBook.ClearAddrs(p)
+			}
+		}()
 	}
+	wg.Wait()
 }
 
 // Returns the cached addresses for a peer, incrementing the return count

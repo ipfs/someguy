@@ -230,11 +230,19 @@ func newHost(cfg *config) (host.Host, error) {
 }
 
 func getCombinedRouting(endpoints []string, dht routing.Routing, cachedAddrBook *cachedAddrBook) (router, error) {
-	if len(endpoints) == 0 {
-		return cachedRouter{sanitizeRouter{libp2pRouter{routing: dht}}, cachedAddrBook}, nil
+	var dhtRouter router
+
+	if cachedAddrBook != nil {
+		dhtRouter = cachedRouter{sanitizeRouter{libp2pRouter{routing: dht}}, cachedAddrBook}
+	} else {
+		dhtRouter = sanitizeRouter{libp2pRouter{routing: dht}}
 	}
 
-	var routers []router
+	if len(endpoints) == 0 {
+		return dhtRouter, nil
+	}
+
+	var delegatedRouters []router
 
 	for _, endpoint := range endpoints {
 		drclient, err := drclient.New(endpoint,
@@ -246,11 +254,11 @@ func getCombinedRouting(endpoints []string, dht routing.Routing, cachedAddrBook 
 		if err != nil {
 			return nil, err
 		}
-		routers = append(routers, clientRouter{Client: drclient})
+		delegatedRouters = append(delegatedRouters, clientRouter{Client: drclient})
 	}
 
 	return parallelRouter{
-		routers: append(routers, cachedRouter{sanitizeRouter{libp2pRouter{routing: dht}}, cachedAddrBook}),
+		routers: append(delegatedRouters, dhtRouter),
 	}, nil
 }
 
