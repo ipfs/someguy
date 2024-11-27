@@ -89,17 +89,17 @@ func start(ctx context.Context, cfg *config) error {
 		go cachedAddrBook.background(ctx, h)
 	}
 
-	crRouters, err := getCombinedRouting(cfg.contentEndpoints, dhtRouting)
+	crRouters, err := getCombinedRouting(cfg.contentEndpoints, dhtRouting, cachedAddrBook)
 	if err != nil {
 		return err
 	}
 
-	prRouters, err := getCombinedRouting(cfg.peerEndpoints, dhtRouting)
+	prRouters, err := getCombinedRouting(cfg.peerEndpoints, dhtRouting, cachedAddrBook)
 	if err != nil {
 		return err
 	}
 
-	ipnsRouters, err := getCombinedRouting(cfg.ipnsEndpoints, dhtRouting)
+	ipnsRouters, err := getCombinedRouting(cfg.ipnsEndpoints, dhtRouting, cachedAddrBook)
 	if err != nil {
 		return err
 	}
@@ -229,9 +229,9 @@ func newHost(cfg *config) (host.Host, error) {
 	return h, nil
 }
 
-func getCombinedRouting(endpoints []string, dht routing.Routing) (router, error) {
+func getCombinedRouting(endpoints []string, dht routing.Routing, cachedAddrBook *cachedAddrBook) (router, error) {
 	if len(endpoints) == 0 {
-		return sanitizeRouter{libp2pRouter{routing: dht}}, nil
+		return cachedRouter{sanitizeRouter{libp2pRouter{routing: dht}}, cachedAddrBook}, nil
 	}
 
 	var routers []router
@@ -249,9 +249,9 @@ func getCombinedRouting(endpoints []string, dht routing.Routing) (router, error)
 		routers = append(routers, clientRouter{Client: drclient})
 	}
 
-	return sanitizeRouter{parallelRouter{
-		routers: append(routers, libp2pRouter{routing: dht}),
-	}}, nil
+	return parallelRouter{
+		routers: append(routers, cachedRouter{sanitizeRouter{libp2pRouter{routing: dht}}, cachedAddrBook}),
+	}, nil
 }
 
 func withTracingAndDebug(next http.Handler, authToken string) http.Handler {
