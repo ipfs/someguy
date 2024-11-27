@@ -128,7 +128,8 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 	cab.isProbing = true
 	defer func() { cab.isProbing = false }()
 
-	for _, p := range cab.addrBook.PeersWithAddrs() {
+	for i, p := range cab.addrBook.PeersWithAddrs() {
+		logger.Debugf("Probe %d: PeerID: %s", i+1, p)
 		if host.Network().Connectedness(p) == network.Connected || host.Network().Connectedness(p) == network.Limited {
 			// No need to probe connected peers
 			continue
