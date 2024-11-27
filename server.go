@@ -22,9 +22,7 @@ import (
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/host"
-	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/core/routing"
-	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoremem"
 	"github.com/libp2p/go-libp2p/p2p/net/connmgr"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -83,12 +81,12 @@ func start(ctx context.Context, cfg *config) error {
 		dhtRouting = standardDHT
 	}
 
-	var cachedAddrBook peerstore.AddrBook
+	var cachedAddrBook *cachedAddrBook
 
 	if cfg.cachedAddrBook {
 		fmt.Println("Using cached address book to speed up peer discovery")
-		cachedAddrBook = pstoremem.NewAddrBook()
-		go manageAddrBook(ctx, cachedAddrBook, h)
+		cachedAddrBook = newCachedAddrBook()
+		go cachedAddrBook.background(ctx, h)
 	}
 
 	crRouters, err := getCombinedRouting(cfg.contentEndpoints, dhtRouting)
@@ -122,10 +120,6 @@ func start(ctx context.Context, cfg *config) error {
 
 	handlerOpts := []server.Option{
 		server.WithPrometheusRegistry(prometheus.DefaultRegisterer),
-	}
-
-	if cachedAddrBook != nil {
-		handlerOpts = append(handlerOpts, server.WithCachedAddrBook(cachedAddrBook))
 	}
 
 	handler := server.Handler(&composableRouter{

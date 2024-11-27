@@ -42,7 +42,7 @@ func main() {
 						Name:    "cached-addr-book",
 						Value:   true,
 						EnvVars: []string{"SOMEGUY_CACHED_ADDR_BOOK"},
-						Usage:   "use separate cached address book instead of the one provided by the libp2p host",
+						Usage:   "use a cached address book to improve peer routing performance",
 					},
 					&cli.StringSliceFlag{
 						Name:    "provider-endpoints",
@@ -123,6 +123,7 @@ func main() {
 					cfg := &config{
 						listenAddress:        ctx.String("listen-address"),
 						acceleratedDHTClient: ctx.Bool("accelerated-dht"),
+						cachedAddrBook:       ctx.Bool("cached-addr-book"),
 
 						contentEndpoints: ctx.StringSlice("provider-endpoints"),
 						peerEndpoints:    ctx.StringSlice("peer-endpoints"),
