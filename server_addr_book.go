@@ -115,7 +115,10 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 				continue
 			}
 			logger.Debug("Running peer probe")
+			start := time.Now()
 			cab.probePeers(ctx, host)
+			elapsed := time.Since(start)
+			logger.Debugf("Finished peer probe in %s", elapsed)
 		}
 	}
 }
