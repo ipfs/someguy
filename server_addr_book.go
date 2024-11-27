@@ -107,7 +107,7 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 				} else {
 					logger.Debug("No signed peer record, caching listen addresses")
 					// We don't have a signed peer record, so we use the listen addresses
-					host.Peerstore().AddAddrs(ev.Peer, ev.ListenAddrs, ConnectedAddrTTL)
+					cab.addrBook.AddAddrs(ev.Peer, ev.ListenAddrs, ConnectedAddrTTL)
 				}
 			case event.EvtPeerConnectednessChanged:
 				// If the peer is not connected or limited, we update the TTL
