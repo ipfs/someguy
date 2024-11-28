@@ -50,17 +50,35 @@ type peerState struct {
 }
 
 type cachedAddrBook struct {
-	addrBook  peerstore.AddrBook
-	peers     map[peer.ID]*peerState
-	mu        sync.RWMutex // Add mutex for thread safety
-	isProbing bool
+	addrBook        peerstore.AddrBook
+	peers           map[peer.ID]*peerState
+	mu              sync.RWMutex // Add mutex for thread safety
+	isProbing       bool
+	allowPrivateIPs bool // for testing
 }
 
-func newCachedAddrBook() *cachedAddrBook {
-	return &cachedAddrBook{
+type AddrBookOption func(*cachedAddrBook) error
+
+func WithAllowPrivateIPs() AddrBookOption {
+	return func(cab *cachedAddrBook) error {
+		cab.allowPrivateIPs = true
+		return nil
+	}
+}
+
+func newCachedAddrBook(opts ...AddrBookOption) (*cachedAddrBook, error) {
+	cab := &cachedAddrBook{
 		peers:    make(map[peer.ID]*peerState),
 		addrBook: pstoremem.NewAddrBook(),
 	}
+
+	for _, opt := range opts {
+		err := opt(cab)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return cab, nil
 }
 
 func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
@@ -149,7 +167,8 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 	semaphore := make(chan struct{}, MaxConcurrentProbes)
 
 	for i, p := range cab.addrBook.PeersWithAddrs() {
-		if host.Network().Connectedness(p) == network.Connected || host.Network().Connectedness(p) == network.Limited {
+		connectedness := host.Network().Connectedness(p)
+		if connectedness == network.Connected || connectedness == network.Limited {
 			continue // don't probe connected peers
 		}
 
@@ -164,7 +183,10 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 		}
 
 		addrs := cab.addrBook.Addrs(p)
-		addrs = ma.FilterAddrs(addrs, manet.IsPublicAddr)
+
+		if !cab.allowPrivateIPs {
+			addrs = ma.FilterAddrs(addrs, manet.IsPublicAddr)
+		}
 
 		if len(addrs) == 0 {
 			continue // no addresses to probe

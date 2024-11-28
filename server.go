@@ -85,7 +85,10 @@ func start(ctx context.Context, cfg *config) error {
 
 	if cfg.cachedAddrBook {
 		fmt.Println("Using cached address book to speed up peer discovery")
-		cachedAddrBook = newCachedAddrBook()
+		cachedAddrBook, err = newCachedAddrBook()
+		if err != nil {
+			return err
+		}
 		go cachedAddrBook.background(ctx, h)
 	}
 

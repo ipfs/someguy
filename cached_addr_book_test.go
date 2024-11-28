@@ -16,14 +16,16 @@ import (
 
 func TestCachedAddrBook(t *testing.T) {
 	// Create a new cached address book
-	cab := newCachedAddrBook()
+	cab, err := newCachedAddrBook(WithAllowPrivateIPs())
+	require.NoError(t, err)
 	require.NotNil(t, cab)
 	require.NotNil(t, cab.peers)
 	require.NotNil(t, cab.addrBook)
 }
 
 func TestGetCachedAddrs(t *testing.T) {
-	cab := newCachedAddrBook()
+	cab, err := newCachedAddrBook(WithAllowPrivateIPs())
+	require.NoError(t, err)
 
 	// Create a test peer with new PeerID
 	testPeer, err := peer.Decode("12D3KooWCZ67sU8oCvKd82Y6c9NgpqgoZYuZEUcg4upHCjK3n1aj")
@@ -59,7 +61,8 @@ func TestBackground(t *testing.T) {
 	require.NoError(t, err)
 	defer em.Close()
 
-	cab := newCachedAddrBook()
+	cab, err := newCachedAddrBook(WithAllowPrivateIPs())
+	require.NoError(t, err)
 
 	// Create a channel to signal when background processing is ready
 	ready := make(chan struct{})
@@ -135,7 +138,8 @@ func TestProbePeers(t *testing.T) {
 	require.NoError(t, err)
 	defer h.Close()
 
-	cab := newCachedAddrBook()
+	cab, err := newCachedAddrBook(WithAllowPrivateIPs())
+	require.NoError(t, err)
 
 	// Add a test peer with some addresses
 	testPeer, _ := peer.Decode("12D3KooWCZ67sU8oCvKd82Y6c9NgpqgoZYuZEUcg4upHCjK3n1aj")
