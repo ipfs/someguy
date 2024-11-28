@@ -15,7 +15,7 @@ import (
 
 var _ server.ContentRouter = cachedRouter{}
 
-// cachedRouter wraps a router with the cachedAddrBook to retrieve cached addresses for peers without multiaddrs
+// cachedRouter wraps a router with the cachedAddrBook to retrieve cached addresses for peers without multiaddrs in FindProviders
 type cachedRouter struct {
 	router
 	cachedAddrBook *cachedAddrBook
@@ -40,9 +40,7 @@ func (r cachedRouter) FindProviders(ctx context.Context, key cid.Cid, limit int)
 				return v
 			}
 			if len(result.Addrs) == 0 {
-				cachedAddrs := r.cachedAddrBook.GetCachedAddrs(result.ID)
-				logger.Debugw("no addresses found for peer, using cached addresses", "peer", result.ID, "cachedAddrs", cachedAddrs)
-				result.Addrs = cachedAddrs
+				result.Addrs = r.getMaddrsFromCache(result.ID)
 			}
 
 			v.Val = result
@@ -57,9 +55,7 @@ func (r cachedRouter) FindProviders(ctx context.Context, key cid.Cid, limit int)
 			}
 
 			if len(result.Addrs) == 0 {
-				cachedAddrs := r.cachedAddrBook.GetCachedAddrs(result.ID)
-				logger.Debugw("no addresses found for peer, using cached addresses", "peer", result.ID, "cachedAddrs", cachedAddrs)
-				result.Addrs = cachedAddrs
+				result.Addrs = r.getMaddrsFromCache(result.ID)
 			}
 			v.Val = result
 		}
@@ -69,27 +65,22 @@ func (r cachedRouter) FindProviders(ctx context.Context, key cid.Cid, limit int)
 }
 
 func (r cachedRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
-	it, err := r.router.FindPeers(ctx, pid, limit)
-	if err != nil {
-		return nil, err
-	}
-
-	return iter.Map(it, func(v iter.Result[*types.PeerRecord]) iter.Result[*types.PeerRecord] {
-		if v.Err != nil || v.Val == nil {
-			return v
-		}
-
-		// If no addresses were found by router, use cached addresses
-		if len(v.Val.Addrs) == 0 {
-			cachedAddrs := r.cachedAddrBook.GetCachedAddrs(v.Val.ID)
-			logger.Debugw("no addresses found for peer, using cached addresses", "peer", v.Val.ID, "cachedAddrs", cachedAddrs)
-			v.Val.Addrs = cachedAddrs
-		}
-		return v
-	}), nil
+	// If FindPeers fails, it seems like there's no point returning results from the cache?
+	return r.router.FindPeers(ctx, pid, limit)
 }
 
 //lint:ignore SA1019 // ignore staticcheck
 func (r cachedRouter) ProvideBitswap(ctx context.Context, req *server.BitswapWriteProvideRequest) (time.Duration, error) {
 	return 0, routing.ErrNotSupported
+}
+
+// GetPeer returns a peer record for a given peer ID, or nil if the peer is not found
+func (r cachedRouter) getMaddrsFromCache(pid *peer.ID) []types.Multiaddr {
+	cachedAddrs := r.cachedAddrBook.GetCachedAddrs(pid)
+	if len(cachedAddrs) > 0 {
+		logger.Debugw("found cached addresses", "peer", pid, "cachedAddrs", cachedAddrs)
+		return cachedAddrs
+	} else {
+		return nil
+	}
 }
