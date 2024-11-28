@@ -16,6 +16,26 @@ import (
 	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoremem"
 	ma "github.com/multiformats/go-multiaddr"
 	manet "github.com/multiformats/go-multiaddr/net"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+)
+
+var (
+	probeDurationHistogram = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:      "probe_duration_seconds",
+		Namespace: "someguy",
+		Subsystem: "cached_addr_book",
+		Help:      "Duration of peer probing operations in seconds",
+		// Buckets optimized for expected probe durations from ms to full timeout
+		Buckets: []float64{0.5, 1, 2, 5, 10, 30, 60, 120},
+	})
+
+	peerStateSize = promauto.NewGauge(prometheus.GaugeOpts{
+		Name:      "peer_state_size",
+		Subsystem: "cached_addr_book",
+		Namespace: "someguy",
+		Help:      "Number of peers object currently in the peer state",
+	})
 )
 
 const (
@@ -114,6 +134,7 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 				if !exists {
 					pState = &peerState{}
 					cab.peers[ev.Peer] = pState
+					peerStateSize.Set(float64(len(cab.peers))) // update metric
 				}
 				pState.lastConnTime = time.Now()
 				pState.lastConnAddr = ev.Conn.RemoteMultiaddr()
@@ -147,11 +168,10 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 				logger.Debug("Skipping peer probe, still running")
 				continue
 			}
-			logger.Debug("Running peer probe")
-			start := time.Now()
+			logger.Debug("Starting to probe peers")
+			cab.isProbing = true
 			cab.probePeers(ctx, host)
-			elapsed := time.Since(start)
-			logger.Debugf("Finished peer probe in %s", elapsed)
+			cab.isProbing = false
 		}
 		// TODO: Add some cleanup logic to remove peers that haven't been returned from the cache in a while or have failed to connect too many times
 	}
@@ -159,8 +179,12 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 
 // Loops over all peers with addresses and probes them if they haven't been probed recently
 func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
-	cab.isProbing = true
-	defer func() { cab.isProbing = false }()
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start).Seconds()
+		probeDurationHistogram.Observe(duration)
+		logger.Debugf("Finished probing peers in %s", duration)
+	}()
 
 	wg := sync.WaitGroup{}
 	// semaphore channel to limit the number of concurrent probes
