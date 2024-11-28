@@ -18,36 +18,41 @@ import (
 	manet "github.com/multiformats/go-multiaddr/net"
 )
 
-// The TTL to keep recently connected peers for. This should be enough time to probe
-const RecentlyConnectedAddrTTL = time.Hour * 24
+const (
+	// The TTL to keep recently connected peers for. Same as DefaultProviderAddrTTL in go-libp2p-kad-dht
+	RecentlyConnectedAddrTTL = time.Hour * 24
 
-// Connected peers don't expire until they disconnect
-const ConnectedAddrTTL = math.MaxInt64
+	// Connected peers don't expire until they disconnect
+	ConnectedAddrTTL = math.MaxInt64
 
-// How long to wait since last connection before probing a peer again
-const PeerProbeThreshold = time.Hour
+	// How long to wait since last connection before probing a peer again
+	PeerProbeThreshold = time.Hour
 
-// How often to run the probe peers function
-const ProbeInterval = time.Minute * 5
+	// How often to run the probe peers function
+	ProbeInterval = time.Minute * 5
 
-// How many concurrent probes to run at once
-const MaxConcurrentProbes = 20
+	// How many concurrent probes to run at once
+	MaxConcurrentProbes = 20
 
-// How many connect failures to tolerate before clearing a peer's addresses
-const MaxConnectFailures = 3
+	// How many connect failures to tolerate before clearing a peer's addresses
+	MaxConnectFailures = 3
+
+	// How long to wait for a connect in a probe to complete
+	ConnectTimeout = time.Second * 10
+)
 
 type peerState struct {
-	lastConnTime    time.Time    // time we were connected to this peer
+	lastConnTime    time.Time    // last time we successfully connected to this peer
 	lastConnAddr    ma.Multiaddr // last address we connected to this peer on
 	returnCount     int          // number of times we've returned this peer from the cache
-	lastReturnTime  time.Time    // time we last returned this peer from the cache
+	lastReturnTime  time.Time    // last time we returned this peer from the cache
 	connectFailures int          // number of times we've failed to connect to this peer
 }
 
 type cachedAddrBook struct {
-	mu        sync.RWMutex // Add mutex for thread safety
-	peers     map[peer.ID]*peerState
 	addrBook  peerstore.AddrBook
+	peers     map[peer.ID]*peerState
+	mu        sync.RWMutex // Add mutex for thread safety
 	isProbing bool
 }
 
@@ -87,15 +92,13 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 			switch ev := ev.(type) {
 			case event.EvtPeerIdentificationCompleted:
 				// Update the peer state with the last connected address and time
-				if _, exists := cab.peers[ev.Peer]; !exists {
-					cab.peers[ev.Peer] = &peerState{
-						lastConnTime: time.Now(),
-						lastConnAddr: ev.Conn.RemoteMultiaddr(),
-					}
-				} else {
-					cab.peers[ev.Peer].lastConnTime = time.Now()
-					cab.peers[ev.Peer].lastConnAddr = ev.Conn.RemoteMultiaddr()
+				pState, exists := cab.peers[ev.Peer]
+				if !exists {
+					pState = &peerState{}
+					cab.peers[ev.Peer] = pState
 				}
+				pState.lastConnTime = time.Now()
+				pState.lastConnAddr = ev.Conn.RemoteMultiaddr()
 
 				if ev.SignedPeerRecord != nil {
 					logger.Debug("Caching signed peer record")
@@ -146,7 +149,6 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 	semaphore := make(chan struct{}, MaxConcurrentProbes)
 
 	for i, p := range cab.addrBook.PeersWithAddrs() {
-		logger.Debugf("Probe %d: PeerID: %s", i+1, p)
 		if host.Network().Connectedness(p) == network.Connected || host.Network().Connectedness(p) == network.Limited {
 			continue // don't probe connected peers
 		}
@@ -162,12 +164,12 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 		}
 
 		addrs := cab.addrBook.Addrs(p)
+		addrs = ma.FilterAddrs(addrs, manet.IsPublicAddr)
 
 		if len(addrs) == 0 {
 			continue // no addresses to probe
 		}
 
-		addrs = ma.FilterAddrs(addrs, manet.IsPublicAddr)
 		wg.Add(1)
 		go func() {
 			semaphore <- struct{}{}
@@ -176,8 +178,9 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 				wg.Done()
 			}()
 
-			ctx, cancel := context.WithTimeout(ctx, time.Second*10)
+			ctx, cancel := context.WithTimeout(ctx, ConnectTimeout)
 			defer cancel()
+			logger.Debugf("Probe %d: PeerID: %s, Addrs: %v", i+1, p, addrs)
 			// if connect succeeds and identify runs, the background loop will take care of updating the peer state and cache
 			err := host.Connect(ctx, peer.AddrInfo{
 				ID: p,
@@ -185,7 +188,7 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 				Addrs: addrs,
 			})
 			if err != nil {
-				logger.Warnf("failed to connect to peer %s: %v", p, err)
+				logger.Debugf("failed to connect to peer %s: %v", p, err)
 				cab.mu.Lock() // Lock before accessing shared state
 				cab.peers[p].connectFailures++
 				cab.mu.Unlock()
@@ -204,10 +207,10 @@ func (cab *cachedAddrBook) GetCachedAddrs(p *peer.ID) []types.Multiaddr {
 	}
 
 	cab.mu.Lock() // Lock before accessing shared state
-	defer cab.mu.Unlock()
-	// Peer state should already exist if it's in the addrbook
+	// Peer state already exists if it's in the addrbook so no need to check
 	cab.peers[*p].returnCount++
 	cab.peers[*p].lastReturnTime = time.Now()
+	defer cab.mu.Unlock()
 
 	var result []types.Multiaddr // convert to local Multiaddr type 🙃
 	for _, addr := range cachedAddrs {
