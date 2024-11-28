@@ -5,6 +5,7 @@ import (
 	"io"
 	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ipfs/boxo/routing/http/types"
@@ -73,7 +74,7 @@ type cachedAddrBook struct {
 	addrBook        peerstore.AddrBook
 	peers           map[peer.ID]*peerState
 	mu              sync.RWMutex // Add mutex for thread safety
-	isProbing       bool
+	isProbing       atomic.Bool
 	allowPrivateIPs bool // for testing
 }
 
@@ -129,15 +130,16 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 		case ev := <-sub.Out():
 			switch ev := ev.(type) {
 			case event.EvtPeerIdentificationCompleted:
-				// Update the peer state with the last connected address and time
+				cab.mu.Lock()
 				pState, exists := cab.peers[ev.Peer]
 				if !exists {
 					pState = &peerState{}
 					cab.peers[ev.Peer] = pState
-					peerStateSize.Set(float64(len(cab.peers))) // update metric
+					peerStateSize.Set(float64(len(cab.peers)))
 				}
 				pState.lastConnTime = time.Now()
 				pState.lastConnAddr = ev.Conn.RemoteMultiaddr()
+				cab.mu.Unlock()
 
 				if ev.SignedPeerRecord != nil {
 					logger.Debug("Caching signed peer record")
@@ -164,14 +166,12 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 				}
 			}
 		case <-probeTicker.C:
-			if cab.isProbing {
+			if cab.isProbing.Load() {
 				logger.Debug("Skipping peer probe, still running")
 				continue
 			}
 			logger.Debug("Starting to probe peers")
-			cab.isProbing = true
-			cab.probePeers(ctx, host)
-			cab.isProbing = false
+			go cab.probePeers(ctx, host)
 		}
 		// TODO: Add some cleanup logic to remove peers that haven't been returned from the cache in a while or have failed to connect too many times
 	}
@@ -179,6 +179,9 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 
 // Loops over all peers with addresses and probes them if they haven't been probed recently
 func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
+	cab.isProbing.Store(true)
+	defer cab.isProbing.Store(false)
+
 	start := time.Now()
 	defer func() {
 		duration := time.Since(start).Seconds()
@@ -196,16 +199,17 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 			continue // don't probe connected peers
 		}
 
-		peerState := cab.peers[p]
-
-		if time.Since(peerState.lastConnTime) < PeerProbeThreshold {
+		cab.mu.RLock()
+		if time.Since(cab.peers[p].lastConnTime) < PeerProbeThreshold {
+			cab.mu.RUnlock()
 			continue // don't probe peers below the probe threshold
 		}
-		if peerState.connectFailures > MaxConnectFailures {
+		if cab.peers[p].connectFailures > MaxConnectFailures {
 			cab.addrBook.ClearAddrs(p) // clear the peer's addresses
-			continue                   // don't probe this peer
+			cab.mu.RUnlock()
+			continue // don't probe this peer
 		}
-
+		cab.mu.RUnlock()
 		addrs := cab.addrBook.Addrs(p)
 
 		if !cab.allowPrivateIPs {
