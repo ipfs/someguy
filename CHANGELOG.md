@@ -15,6 +15,9 @@ The following emojis are used to highlight certain changes:
 
 ### Added
 
+- Added a new `cachedAddrBook` implementation that caches peer addresses and probes them in the background.
+- Added a new `cachedRouter` that uses `cachedAddrBook` to retrieve cached addresses for peers without multiaddrs.
+
 ### Changed
 
 ### Removed
