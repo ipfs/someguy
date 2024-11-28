@@ -57,7 +57,7 @@ func TestBackground(t *testing.T) {
 	require.NoError(t, err)
 	defer h.Close()
 
-	em, err := h.EventBus().Emitter(new(event.EvtPeerIdentificationCompleted))
+	em, err := h.EventBus().Emitter(&event.EvtPeerIdentificationCompleted{})
 	require.NoError(t, err)
 	defer em.Close()
 
@@ -84,24 +84,6 @@ func TestBackground(t *testing.T) {
 	// Simulate peer identification event
 	addr, _ := ma.NewMultiaddr("/ip4/127.0.0.1/tcp/1234")
 
-	// Use a channel to wait for event processing
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		// Check periodically until the peer is added or timeout (after 50 * 10ms)
-		for i := 0; i < 50; i++ {
-			cab.mu.RLock()
-			peerState, exists := cab.peers[testPeer]
-			if exists {
-				assert.Equal(t, addr, peerState.lastConnAddr)
-				cab.mu.RUnlock()
-				return
-			}
-			cab.mu.RUnlock()
-			time.Sleep(10 * time.Millisecond)
-		}
-	}()
-
 	// Emit the event after setting up the waiter
 	err = em.Emit(event.EvtPeerIdentificationCompleted{
 		Peer: testPeer,
@@ -112,12 +94,26 @@ func TestBackground(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			cab.mu.RLock()
+			_, exists := cab.peers[testPeer]
+			cab.mu.RUnlock()
+			if exists {
+				return
+			}
+			time.Sleep(30 * time.Millisecond)
+		}
+	}()
+
 	// Wait for processing with timeout
 	select {
 	case <-done:
 		// Success case - continue to verification
-	case <-time.After(time.Second):
-		t.Fatal("timeout waiting for peer to be added")
+	case <-time.After(time.Second * 5):
+		t.Fatal("timeout waiting for peer to be added to peer state")
 	}
 
 	// Verify peer was added

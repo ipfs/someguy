@@ -139,6 +139,7 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 				}
 				pState.lastConnTime = time.Now()
 				pState.lastConnAddr = ev.Conn.RemoteMultiaddr()
+				pState.connectFailures = 0 // reset connect failures on successful connection
 				cab.mu.Unlock()
 
 				if ev.SignedPeerRecord != nil {
@@ -256,11 +257,15 @@ func (cab *cachedAddrBook) GetCachedAddrs(p *peer.ID) []types.Multiaddr {
 		return nil
 	}
 
-	cab.mu.Lock() // Lock before accessing shared state
-	// Peer state already exists if it's in the addrbook so no need to check
+	cab.mu.Lock()
+	// Initialize peer state if it doesn't exist
+	if _, exists := cab.peers[*p]; !exists {
+		cab.peers[*p] = &peerState{}
+		peerStateSize.Set(float64(len(cab.peers)))
+	}
 	cab.peers[*p].returnCount++
 	cab.peers[*p].lastReturnTime = time.Now()
-	defer cab.mu.Unlock()
+	cab.mu.Unlock()
 
 	var result []types.Multiaddr // convert to local Multiaddr type 🙃
 	for _, addr := range cachedAddrs {
