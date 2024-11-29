@@ -40,17 +40,17 @@ var (
 )
 
 const (
-	// The TTL to keep recently connected peers for. Same as DefaultProviderAddrTTL in go-libp2p-kad-dht
-	RecentlyConnectedAddrTTL = time.Hour * 24
+	// The TTL to keep recently connected peers for. Same as [amino.DefaultProvideValidity] in go-libp2p-kad-dht
+	RecentlyConnectedAddrTTL = amino.DefaultProvideValidity
 
 	// Connected peers don't expire until they disconnect
-	ConnectedAddrTTL = math.MaxInt64
+	ConnectedAddrTTL = peerstore.ConnectedAddrTTL
 
 	// How long to wait since last connection before probing a peer again
 	PeerProbeThreshold = time.Hour
 
 	// How often to run the probe peers function
-	ProbeInterval = time.Minute * 5
+	ProbeInterval = peerstore.RecentlyConnectedAddrTTL
 
 	// How many concurrent probes to run at once
 	MaxConcurrentProbes = 20
@@ -58,8 +58,9 @@ const (
 	// How many connect failures to tolerate before clearing a peer's addresses
 	MaxConnectFailures = 3
 
-	// How long to wait for a connect in a probe to complete
-	ConnectTimeout = time.Second * 10
+	// How long to wait for a connect in a probe to complete.
+	// The worst case is a peer behind Relay.
+	ConnectTimeout = relay.ConnectTimeout
 )
 
 type peerState struct {
@@ -190,7 +191,7 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 		logger.Debugf("Finished probing peers in %s", duration)
 	}()
 
-	wg := sync.WaitGroup{}
+	var wg sync.WaitGroup
 	// semaphore channel to limit the number of concurrent probes
 	semaphore := make(chan struct{}, MaxConcurrentProbes)
 
