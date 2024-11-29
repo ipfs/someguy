@@ -3,18 +3,19 @@ package main
 import (
 	"context"
 	"io"
-	"math"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/ipfs/boxo/routing/http/types"
+	"github.com/libp2p/go-libp2p-kad-dht/amino"
 	"github.com/libp2p/go-libp2p/core/event"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoremem"
+	"github.com/libp2p/go-libp2p/p2p/protocol/circuitv2/relay"
 	ma "github.com/multiformats/go-multiaddr"
 	manet "github.com/multiformats/go-multiaddr/net"
 	"github.com/prometheus/client_golang/prometheus"
@@ -49,8 +50,8 @@ const (
 	// How long to wait since last connection before probing a peer again
 	PeerProbeThreshold = time.Hour
 
-	// How often to run the probe peers function
-	ProbeInterval = peerstore.RecentlyConnectedAddrTTL
+	// How often to run the probe peers function (Same as RecentlyConnectedAddrTTL)
+	ProbeInterval = time.Minute * 15
 
 	// How many concurrent probes to run at once
 	MaxConcurrentProbes = 20
@@ -59,7 +60,7 @@ const (
 	MaxConnectFailures = 3
 
 	// How long to wait for a connect in a probe to complete.
-	// The worst case is a peer behind Relay.
+	// The worst case is a peer behind a relay, so we use the relay connect timeout.
 	ConnectTimeout = relay.ConnectTimeout
 )
 
