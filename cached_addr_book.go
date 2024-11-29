@@ -24,7 +24,7 @@ import (
 var (
 	probeDurationHistogram = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:      "probe_duration_seconds",
-		Namespace: "someguy",
+		Namespace: name,
 		Subsystem: "cached_addr_book",
 		Help:      "Duration of peer probing operations in seconds",
 		// Buckets optimized for expected probe durations from ms to full timeout
@@ -34,7 +34,7 @@ var (
 	peerStateSize = promauto.NewGauge(prometheus.GaugeOpts{
 		Name:      "peer_state_size",
 		Subsystem: "cached_addr_book",
-		Namespace: "someguy",
+		Namespace: name,
 		Help:      "Number of peers object currently in the peer state",
 	})
 )

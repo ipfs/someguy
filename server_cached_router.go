@@ -22,7 +22,7 @@ var (
 	peerAddrLookups = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name:      "peer_addr_lookups",
 		Subsystem: "cached_router",
-		Namespace: "someguy",
+		Namespace: name,
 		Help:      "Number of peer addr info lookups per origin and cache state",
 	},
 		[]string{addrCacheStateLabel, addrQueryOriginLabel},
