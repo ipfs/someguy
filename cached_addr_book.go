@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gammazero/deque"
 	"github.com/ipfs/boxo/routing/http/types"
 	"github.com/libp2p/go-libp2p-kad-dht/amino"
 	"github.com/libp2p/go-libp2p/core/event"
@@ -77,7 +78,8 @@ type cachedAddrBook struct {
 	peers           map[peer.ID]*peerState
 	mu              sync.RWMutex // Add mutex for thread safety
 	isProbing       atomic.Bool
-	allowPrivateIPs bool // for testing
+	allowPrivateIPs bool                  // for testing
+	toProbe         *deque.Deque[peer.ID] // queue of peer IDs to find and probe
 }
 
 type AddrBookOption func(*cachedAddrBook) error
@@ -93,6 +95,7 @@ func newCachedAddrBook(opts ...AddrBookOption) (*cachedAddrBook, error) {
 	cab := &cachedAddrBook{
 		peers:    make(map[peer.ID]*peerState),
 		addrBook: pstoremem.NewAddrBook(),
+		toProbe:  &deque.Deque[peer.ID]{},
 	}
 
 	for _, opt := range opts {
