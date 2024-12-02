@@ -92,7 +92,7 @@ func (r cachedRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (it
 			return nil, err
 		}
 		// if found in cache, return synthetic peer result based on cached addrs
-		var sliceIt iter.Iter[*types.PeerRecord] = iter.FromSlice([]*types.PeerRecord{&types.PeerRecord{
+		var sliceIt iter.Iter[*types.PeerRecord] = iter.FromSlice([]*types.PeerRecord{{
 			Schema: types.SchemaPeer,
 			ID:     &pid,
 			Addrs:  cachedAddrs,
