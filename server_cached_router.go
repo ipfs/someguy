@@ -93,7 +93,7 @@ var _ iter.ResultIter[types.Record] = &cacheFallbackIter{}
 type cacheFallbackIter struct {
 	sourceIter      iter.ResultIter[types.Record]
 	current         iter.Result[types.Record]
-	findPeersResult chan *types.PeerRecord
+	findPeersResult chan types.PeerRecord
 	router          cachedRouter
 	ctx             context.Context
 	cancel          context.CancelFunc
@@ -107,61 +107,52 @@ func NewCacheFallbackIter(sourceIter iter.ResultIter[types.Record], router cache
 		router:          router,
 		ctx:             ctx,
 		cancel:          cancel,
-		findPeersResult: make(chan *types.PeerRecord, 1),
+		findPeersResult: make(chan types.PeerRecord, 1),
 		ongoingLookups:  atomic.Int32{},
 	}
 }
 
 func (it *cacheFallbackIter) Next() bool {
-	select {
-	case <-it.ctx.Done():
-		return false
-	case foundPeer := <-it.findPeersResult:
-		// read from channel if available
-		it.current = iter.Result[types.Record]{Val: foundPeer}
-		return true
-	default:
-		// load up current val from source iterator and avoid blocking on channel
-		if it.sourceIter.Next() {
-			val := it.sourceIter.Val()
-			handleRecord := func(id *peer.ID, record *types.PeerRecord) bool {
-				record.Addrs = it.router.withAddrsFromCache(addrQueryOriginProviders, id, record.Addrs)
-				if record.Addrs != nil { // if we have addrs, return them
-					it.current = iter.Result[types.Record]{Val: record}
-					return true
-				}
-				// If a record has no addrs, we need to look it up.
-				go it.dispatchFindPeer(*id)
-				if it.sourceIter.Next() { // In the meantime, we continue reading from source iterator if we have more results
-					it.current = it.sourceIter.Val()
-					return true
-				}
-				return it.ongoingLookups.Load() > 0 // If there are no more results from the source iterator, and no ongoing lookups, we're done.
-			}
-			switch val.Val.GetSchema() {
-			case types.SchemaBitswap:
-				if record, ok := val.Val.(*types.BitswapRecord); ok {
-					// we convert to peer record to handle uniformly
-					return handleRecord(record.ID, types.FromBitswapRecord(record))
-				}
-			case types.SchemaPeer:
-				if record, ok := val.Val.(*types.PeerRecord); ok {
-					return handleRecord(record.ID, record)
-				}
-			default:
-				// we don't know how to handle this schema, so we just return the record as is
-				it.current = val
+	// load up current val from source iterator and avoid blocking on channel
+	if it.sourceIter.Next() {
+		val := it.sourceIter.Val()
+		handleRecord := func(id *peer.ID, record *types.PeerRecord) bool {
+			record.Addrs = it.router.withAddrsFromCache(addrQueryOriginProviders, id, record.Addrs)
+			if record.Addrs != nil { // if we have addrs, return them
+				it.current = iter.Result[types.Record]{Val: record}
 				return true
 			}
+			// If a record has no addrs, we need to look it up.
+			go it.dispatchFindPeer(*id)
+			if it.sourceIter.Next() { // In the meantime, we continue reading from source iterator if we have more results
+				it.current = it.sourceIter.Val()
+				return true
+			}
+			return it.ongoingLookups.Load() > 0 // If there are no more results from the source iterator, and no ongoing lookups, we're done.
 		}
-		// source iterator is exhausted, check if there are any peers left to look up
-		if it.ongoingLookups.Load() > 0 {
-			// if there are any ongoing lookups, return true to keep iterating
+		switch val.Val.GetSchema() {
+		case types.SchemaBitswap:
+			if record, ok := val.Val.(*types.BitswapRecord); ok {
+				// we convert to peer record to handle uniformly
+				return handleRecord(record.ID, types.FromBitswapRecord(record))
+			}
+		case types.SchemaPeer:
+			if record, ok := val.Val.(*types.PeerRecord); ok {
+				return handleRecord(record.ID, record)
+			}
+		default:
+			// we don't know how to handle this schema, so we just return the record as is
+			it.current = val
 			return true
 		}
-		// if there are no ongoing lookups and the source iterator is exhausted, we're done
-		return false
 	}
+	// source iterator is exhausted, check if there are any peers left to look up
+	if it.ongoingLookups.Load() > 0 {
+		// if there are any ongoing lookups, return true to keep iterating
+		return true
+	}
+	// if there are no ongoing lookups and the source iterator is exhausted, we're done
+	return false
 }
 
 func (it *cacheFallbackIter) dispatchFindPeer(pid peer.ID) {
@@ -180,14 +171,22 @@ func (it *cacheFallbackIter) dispatchFindPeer(pid peer.ID) {
 		return
 	}
 	if len(peers) > 0 {
-		it.findPeersResult <- peers[0]
+		it.findPeersResult <- *peers[0]
 	} else {
 		logger.Errorw("no peer was found in cachedFallbackIter", "peer", pid)
 	}
 }
 
 func (it *cacheFallbackIter) Val() iter.Result[types.Record] {
-	return it.current
+	select {
+	case <-it.ctx.Done():
+		return iter.Result[types.Record]{Err: it.ctx.Err()}
+	case foundPeer := <-it.findPeersResult:
+		// read from channel if available
+		return iter.Result[types.Record]{Val: &foundPeer}
+	default:
+		return it.current
+	}
 }
 
 func (it *cacheFallbackIter) Close() error {
