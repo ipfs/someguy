@@ -2,21 +2,19 @@ package main
 
 import (
 	"context"
-	"reflect"
-	"time"
+	"sync/atomic"
 
-	"github.com/ipfs/boxo/routing/http/server"
 	"github.com/ipfs/boxo/routing/http/types"
 	"github.com/ipfs/boxo/routing/http/types/iter"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/routing"
+	ma "github.com/multiformats/go-multiaddr"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 var (
-	_ server.ContentRouter = cachedRouter{}
+	_ router = cachedRouter{}
 
 	// peerAddrLookups allows us reason if/how effective peer addr cache is
 	peerAddrLookups = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -49,72 +47,23 @@ type cachedRouter struct {
 	cachedAddrBook *cachedAddrBook
 }
 
+func NewCachedRouter(router router, cab *cachedAddrBook) cachedRouter {
+	return cachedRouter{router, cab}
+}
+
 func (r cachedRouter) FindProviders(ctx context.Context, key cid.Cid, limit int) (iter.ResultIter[types.Record], error) {
 	it, err := r.router.FindProviders(ctx, key, limit)
 	if err != nil {
 		return nil, err
 	}
-	return iter.Map(it, func(v iter.Result[types.Record]) iter.Result[types.Record] {
-		if v.Err != nil || v.Val == nil {
-			return v
-		}
-		switch v.Val.GetSchema() {
-		case types.SchemaPeer:
-			result, ok := v.Val.(*types.PeerRecord)
-			if !ok {
-				logger.Errorw("problem casting find providers result", "Schema", v.Val.GetSchema(), "Type", reflect.TypeOf(v).String())
-				return v
-			}
-			result.Addrs = r.withAddrsFromCache(addrQueryOriginProviders, result.ID, result.Addrs)
-			v.Val = result
-		//lint:ignore SA1019 // ignore staticcheck
-		case types.SchemaBitswap:
-			//lint:ignore SA1019 // ignore staticcheck
-			result, ok := v.Val.(*types.BitswapRecord)
-			if !ok {
-				logger.Errorw("problem casting find providers result", "Schema", v.Val.GetSchema(), "Type", reflect.TypeOf(v).String())
-				return v
-			}
-			result.Addrs = r.withAddrsFromCache(addrQueryOriginProviders, result.ID, result.Addrs)
-			v.Val = result
-		}
 
-		return v
-	}), nil
+	return NewCacheFallbackIter(it, r, ctx), nil // create a new iterator that will use cache if available and fallback to `FindPeer` if no addresses are cached
 }
 
-func (r cachedRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
-	it, err := r.router.FindPeers(ctx, pid, limit)
-	if err != nil {
-		// check cache, if peer is unknown, return original error
-		cachedAddrs := r.withAddrsFromCache(addrQueryOriginPeers, &pid, nil)
-		if len(cachedAddrs) == 0 {
-			return nil, err
-		}
-		// if found in cache, return synthetic peer result based on cached addrs
-		var sliceIt iter.Iter[*types.PeerRecord] = iter.FromSlice([]*types.PeerRecord{{
-			Schema: types.SchemaPeer,
-			ID:     &pid,
-			Addrs:  cachedAddrs,
-		}})
-		it = iter.ToResultIter(sliceIt)
-	}
-	return iter.Map(it, func(v iter.Result[*types.PeerRecord]) iter.Result[*types.PeerRecord] {
-		if v.Err != nil || v.Val == nil {
-			return v
-		}
-		switch v.Val.GetSchema() {
-		case types.SchemaPeer:
-			v.Val.Addrs = r.withAddrsFromCache(addrQueryOriginPeers, v.Val.ID, v.Val.Addrs)
-		}
-		return v
-	}), nil
-}
-
-//lint:ignore SA1019 // ignore staticcheck
-func (r cachedRouter) ProvideBitswap(ctx context.Context, req *server.BitswapWriteProvideRequest) (time.Duration, error) {
-	return 0, routing.ErrNotSupported
-}
+// TODO: Open question: should we implement FindPeers to look up cache? If a FindPeer fails to return any peers, the peer is likely long offline.
+// func (r cachedRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
+// 	return r.router.FindPeers(ctx, pid, limit)
+// }
 
 // withAddrsFromCache returns the best list of addrs for specified [peer.ID].
 // It will consult cache only if the addrs slice passed to it is empty.
@@ -131,7 +80,137 @@ func (r cachedRouter) withAddrsFromCache(queryOrigin string, pid *peer.ID, addrs
 		peerAddrLookups.WithLabelValues(addrCacheStateHit, queryOrigin).Inc()
 		return cachedAddrs
 	} else {
+		// Cache miss. Queue peer for lookup.
 		peerAddrLookups.WithLabelValues(addrCacheStateMiss, queryOrigin).Inc()
 		return nil
 	}
+}
+
+var _ iter.ResultIter[types.Record] = &cacheFallbackIter{}
+
+// cacheFallbackIter is a custom iterator that will resolve peers with no addresses from cache and if no cached addresses, will look them up via FindPeers.
+type cacheFallbackIter struct {
+	sourceIter      iter.ResultIter[types.Record]
+	current         iter.Result[types.Record]
+	findPeersResult chan *types.PeerRecord
+	router          cachedRouter
+	ctx             context.Context
+	ongoingLookups  atomic.Int32
+}
+
+func NewCacheFallbackIter(sourceIter iter.ResultIter[types.Record], router cachedRouter, ctx context.Context) *cacheFallbackIter {
+	return &cacheFallbackIter{
+		sourceIter: sourceIter,
+		router:     router,
+		ctx:        ctx,
+
+		findPeersResult: make(chan *types.PeerRecord, 1),
+		ongoingLookups:  atomic.Int32{},
+	}
+}
+
+func (it *cacheFallbackIter) Next() bool {
+	select {
+	case <-it.ctx.Done():
+		return false
+	case foundPeer := <-it.findPeersResult:
+		// read from channel if available
+		it.current = iter.Result[types.Record]{Val: foundPeer}
+		return true
+	default:
+		// load up current val from source iterator and avoid blocking on channel
+		if it.sourceIter.Next() {
+			val := it.sourceIter.Val()
+			switch val.Val.GetSchema() {
+			case types.SchemaBitswap:
+				result, ok := val.Val.(*types.BitswapRecord)
+				if !ok {
+					it.current = val
+					return true // pass these through
+				}
+				result.Addrs = it.router.withAddrsFromCache(addrQueryOriginProviders, result.ID, result.Addrs)
+				if result.Addrs != nil {
+					it.current = iter.Result[types.Record]{Val: result}
+					return true
+				} else {
+					// no cached addrs, queue for lookup and try to get the next value from the source iterator
+					go it.dispatchFindPeer(*result.ID)
+					if it.sourceIter.Next() {
+						it.current = it.sourceIter.Val()
+						return true
+					} else {
+						return it.ongoingLookups.Load() > 0 // if the source iterator is exhausted, check if there are any peers left to look up
+					}
+				}
+
+			case types.SchemaPeer:
+				result, ok := val.Val.(*types.PeerRecord)
+				if !ok {
+					it.current = val
+					return true // pass these through
+				}
+				result.Addrs = it.router.withAddrsFromCache(addrQueryOriginProviders, result.ID, result.Addrs)
+				if result.Addrs != nil {
+					it.current = iter.Result[types.Record]{Val: result}
+					return true
+				} else {
+					// no cached addrs, queue for lookup and try to get the next value from the source iterator
+					go it.dispatchFindPeer(*result.ID)
+					if it.sourceIter.Next() {
+						it.current = it.sourceIter.Val()
+						return true
+					} else {
+						return it.ongoingLookups.Load() > 0 // if the source iterator is exhausted, check if there are any peers left to look up
+					}
+				}
+			}
+		}
+		// source iterator is exhausted, check if there are any peers left to look up
+		if it.ongoingLookups.Load() > 0 {
+			// if there are any ongoing lookups, return true to keep iterating
+			return true
+		}
+		// if there are no ongoing lookups and the source iterator is exhausted, we're done
+		return false
+	}
+}
+
+func (it *cacheFallbackIter) dispatchFindPeer(pid peer.ID) {
+	it.ongoingLookups.Add(1)
+	defer it.ongoingLookups.Add(-1)
+	// FindPeers is weird in that it accepts a limit. But we only want one result, ideally from the libp2p router.
+	peersIt, err := it.router.FindPeers(it.ctx, pid, 1)
+
+	if err != nil {
+		logger.Errorw("error looking up peer", "peer", pid, "error", err)
+		return
+	}
+	peers, err := iter.ReadAllResults(peersIt)
+	if err != nil {
+		logger.Errorw("error reading find peers results", "peer", pid, "error", err)
+		return
+	}
+	if len(peers) > 0 {
+		it.findPeersResult <- peers[0]
+	} else {
+		logger.Errorw("no peer was found in cachedFallbackIter", "peer", pid)
+	}
+}
+
+func (it *cacheFallbackIter) Val() iter.Result[types.Record] {
+	return it.current
+}
+
+func (it *cacheFallbackIter) Close() error {
+	it.ctx.Cancel()
+	close(it.findPeersResult)
+	return it.sourceIter.Close()
+}
+
+func ToMultiaddrs(addrs []ma.Multiaddr) []types.Multiaddr {
+	var result []types.Multiaddr
+	for _, addr := range addrs {
+		result = append(result, types.Multiaddr{Multiaddr: addr})
+	}
+	return result
 }
