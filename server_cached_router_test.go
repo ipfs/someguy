@@ -291,10 +291,10 @@ func TestCacheFallbackIter(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, results, 1)
 
-		bitswapRecord := results[0].(*types.BitswapRecord)
-		require.Equal(t, pid, *bitswapRecord.ID)
-		require.Len(t, bitswapRecord.Addrs, 1)
-		require.Equal(t, publicAddr.String(), bitswapRecord.Addrs[0].String())
+		peerRecord := results[0].(*types.PeerRecord)
+		require.Equal(t, pid, *peerRecord.ID)
+		require.Len(t, peerRecord.Addrs, 1)
+		require.Equal(t, publicAddr.String(), peerRecord.Addrs[0].String())
 	})
 
 	t.Run("handles context cancellation", func(t *testing.T) {
