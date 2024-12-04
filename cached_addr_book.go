@@ -28,8 +28,8 @@ var (
 		Namespace: name,
 		Subsystem: "cached_addr_book",
 		Help:      "Duration of peer probing operations in seconds",
-		// Buckets optimized for expected probe durations from ms to full timeout
-		Buckets: []float64{0.5, 1, 2, 5, 10, 30, 60, 120},
+		// Buckets probe durations from 1s to 5 minutes
+		Buckets: []float64{1, 2, 5, 10, 30, 60, 120, 300},
 	})
 
 	peerStateSize = promauto.NewGauge(prometheus.GaugeOpts{
@@ -236,8 +236,7 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 			logger.Debugf("Probe %d: PeerID: %s, Addrs: %v", i+1, p, addrs)
 			// if connect succeeds and identify runs, the background loop will take care of updating the peer state and cache
 			err := host.Connect(ctx, peer.AddrInfo{
-				ID: p,
-				// TODO: Should we should probe the last connected address or all addresses?
+				ID:    p,
 				Addrs: addrs,
 			})
 			if err != nil {
