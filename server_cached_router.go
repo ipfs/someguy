@@ -137,7 +137,9 @@ func (it *cacheFallbackIter) Next() bool {
 		}
 
 		switch val.Val.GetSchema() {
+		//lint:ignore SA1019 // ignore staticcheck
 		case types.SchemaBitswap:
+			//lint:ignore SA1019 // ignore staticcheck
 			if record, ok := val.Val.(*types.BitswapRecord); ok {
 				return handleRecord(record.ID, types.FromBitswapRecord(record))
 			}

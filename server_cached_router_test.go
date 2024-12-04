@@ -270,6 +270,7 @@ func TestCacheFallbackIter(t *testing.T) {
 
 		// Create source iterator with bitswap record
 		sourceIter := newMockResultIter([]iter.Result[types.Record]{
+			//lint:ignore SA1019 // ignore staticcheck
 			{Val: &types.BitswapRecord{Schema: types.SchemaBitswap, ID: &pid, Addrs: nil}},
 		})
 
