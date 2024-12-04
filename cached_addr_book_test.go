@@ -49,7 +49,7 @@ func TestGetCachedAddrs(t *testing.T) {
 }
 
 func TestBackground(t *testing.T) {
-	t.Skip("skipping until we have a better way to test background")
+	t.Skip("skipping until this test is less flaky")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

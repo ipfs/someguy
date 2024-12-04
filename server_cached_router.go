@@ -61,16 +61,17 @@ func (r cachedRouter) FindProviders(ctx context.Context, key cid.Cid, limit int)
 		return nil, err
 	}
 
-	return NewCacheFallbackIter(it, r, ctx), nil // create a new iterator that will use cache if available and fallback to `FindPeer` if no addresses are cached
+	return NewCacheFallbackIter(it, r, ctx), nil
 }
 
-// TODO: Open question: should we implement FindPeers to look up cache? If a FindPeer fails to return any peers, the peer is likely long offline.
+// TODO: Open question: should FindPeers look up cache? If a FindPeer fails to return any peers, the peer is likely long offline.
+// So it's not clear that we gain anything by returning a cached peer that is likely offline.
 // func (r cachedRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
 // 	return r.router.FindPeers(ctx, pid, limit)
 // }
 
 // withAddrsFromCache returns the best list of addrs for specified [peer.ID].
-// It will consult cache only if the addrs slice passed to it is empty.
+// It will consult cache ONLY if the addrs slice passed to it is empty.
 func (r cachedRouter) withAddrsFromCache(queryOrigin string, pid *peer.ID, addrs []types.Multiaddr) []types.Multiaddr {
 	// skip cache if we already have addrs
 	if len(addrs) > 0 {
@@ -92,7 +93,6 @@ func (r cachedRouter) withAddrsFromCache(queryOrigin string, pid *peer.ID, addrs
 
 var _ iter.ResultIter[types.Record] = &cacheFallbackIter{}
 
-// cacheFallbackIter is a wrapper around a results iterator that will resolve peers with no addresses from cache and if no cached addresses, will look them up via FindPeers.
 type cacheFallbackIter struct {
 	sourceIter      iter.ResultIter[types.Record]
 	current         iter.Result[types.Record]
@@ -103,6 +103,8 @@ type cacheFallbackIter struct {
 	ongoingLookups  atomic.Int32
 }
 
+// NewCacheFallbackIter is a wrapper around a results iterator that will resolve peers with no addresses from cache and if no cached addresses, will look them up via FindPeers.
+// It's a bit complex because it ensures we continue iterating without blocking on the FindPeers call.
 func NewCacheFallbackIter(sourceIter iter.ResultIter[types.Record], router cachedRouter, ctx context.Context) *cacheFallbackIter {
 	ctx, cancel := context.WithCancel(ctx)
 	return &cacheFallbackIter{

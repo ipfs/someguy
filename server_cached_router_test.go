@@ -20,6 +20,7 @@ type mockResultIter[T any] struct {
 	closed  bool
 }
 
+// Simple mock results iter that doesn't use channels
 func newMockResultIter[T any](results []iter.Result[T]) *mockResultIter[T] {
 	return &mockResultIter[T]{
 		results: results,
