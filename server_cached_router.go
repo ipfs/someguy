@@ -64,11 +64,19 @@ func (r cachedRouter) FindProviders(ctx context.Context, key cid.Cid, limit int)
 	return NewCacheFallbackIter(it, r, ctx), nil
 }
 
-// TODO: Open question: should FindPeers look up cache? If a FindPeer fails to return any peers, the peer is likely long offline.
-// So it's not clear that we gain anything by returning a cached peer that is likely offline.
-// func (r cachedRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
-// 	return r.router.FindPeers(ctx, pid, limit)
-// }
+// FindPeers uses a simpler approach than FindProviders because we're dealing with a single PeerRecord, and there's
+// no point in trying to dispatch an additional FindPeer call.
+func (r cachedRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
+	it, err := r.router.FindPeers(ctx, pid, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	return iter.Map(it, func(record iter.Result[*types.PeerRecord]) iter.Result[*types.PeerRecord] {
+		record.Val.Addrs = r.withAddrsFromCache(addrQueryOriginPeers, record.Val.ID, record.Val.Addrs)
+		return record
+	}), nil
+}
 
 // withAddrsFromCache returns the best list of addrs for specified [peer.ID].
 // It will consult cache ONLY if the addrs slice passed to it is empty.

@@ -161,6 +161,71 @@ func TestCachedRouter(t *testing.T) {
 		require.Equal(t, publicAddr.String(), results[0].Addrs[0].String())
 	})
 
+	t.Run("FindPeers handles records with and without addresses", func(t *testing.T) {
+		ctx := context.Background()
+		pid := peer.ID("test-peer")
+		publicAddr := mustMultiaddr(t, "/ip4/137.21.14.12/tcp/4001")
+
+		// Create mock router that returns a record without addresses
+		mr := &mockRouter{}
+		mockIter := newMockResultIter([]iter.Result[*types.PeerRecord]{
+			{Val: &types.PeerRecord{Schema: "peer", ID: &pid, Addrs: nil}},
+		})
+		mr.On("FindPeers", mock.Anything, pid, 10).Return(mockIter, nil)
+
+		// Create cached address book with test addresses
+		cab, err := newCachedAddrBook()
+		require.NoError(t, err)
+		cab.addrBook.AddAddrs(pid, []multiaddr.Multiaddr{publicAddr.Multiaddr}, time.Hour)
+
+		// Create cached router
+		cr := NewCachedRouter(mr, cab)
+
+		it, err := cr.FindPeers(ctx, pid, 10)
+		require.NoError(t, err)
+
+		results, err := iter.ReadAllResults(it)
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+
+		// Verify cached addresses were added to the record
+		require.Equal(t, pid, *results[0].ID)
+		require.Len(t, results[0].Addrs, 1)
+		require.Equal(t, publicAddr.String(), results[0].Addrs[0].String())
+	})
+
+	t.Run("FindPeers returns same addresses as underlying router", func(t *testing.T) {
+		ctx := context.Background()
+		pid := peer.ID("test-peer")
+		publicAddr := mustMultiaddr(t, "/ip4/137.21.14.12/tcp/4001")
+
+		// Create mock router that returns a record with addresses
+		mr := &mockRouter{}
+		mockIter := newMockResultIter([]iter.Result[*types.PeerRecord]{
+			{Val: &types.PeerRecord{Schema: "peer", ID: &pid, Addrs: []types.Multiaddr{publicAddr}}},
+		})
+		mr.On("FindPeers", mock.Anything, pid, 10).Return(mockIter, nil)
+
+		// Create cached address book without any addresses
+		cab, err := newCachedAddrBook()
+		require.NoError(t, err)
+
+		// Create cached router
+		cr := NewCachedRouter(mr, cab)
+
+		it, err := cr.FindPeers(ctx, pid, 10)
+		require.NoError(t, err)
+
+		results, err := iter.ReadAllResults(it)
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+
+		// Verify the addresses returned are the same as those from the underlying router
+		require.Equal(t, pid, *results[0].ID)
+		require.Len(t, results[0].Addrs, 1)
+		require.Equal(t, publicAddr.String(), results[0].Addrs[0].String())
+	})
+
 }
 
 func TestCacheFallbackIter(t *testing.T) {
