@@ -45,7 +45,6 @@ func TestGetCachedAddrs(t *testing.T) {
 
 	// Verify return count and time were updated
 	assert.Equal(t, 1, cab.peers[testPeer].returnCount)
-	assert.False(t, cab.peers[testPeer].lastReturnTime.IsZero())
 }
 
 func TestBackground(t *testing.T) {
@@ -122,7 +121,6 @@ func TestBackground(t *testing.T) {
 	peerState, exists := cab.peers[testPeer]
 	assert.True(t, exists)
 	assert.NotNil(t, peerState)
-	assert.Equal(t, addr, peerState.lastConnAddr)
 	cab.mu.RUnlock()
 }
 

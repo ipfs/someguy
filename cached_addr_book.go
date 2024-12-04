@@ -65,11 +65,9 @@ const (
 )
 
 type peerState struct {
-	lastConnTime    time.Time    // last time we successfully connected to this peer
-	lastConnAddr    ma.Multiaddr // last address we connected to this peer on
-	returnCount     int          // number of times we've returned this peer from the cache
-	lastReturnTime  time.Time    // last time we returned this peer from the cache
-	connectFailures int          // number of times we've failed to connect to this peer
+	lastConnTime    time.Time // last time we successfully connected to this peer
+	returnCount     int       // number of times we've returned this peer from the cache
+	connectFailures int       // number of times we've failed to connect to this peer
 }
 
 type cachedAddrBook struct {
@@ -140,7 +138,6 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 					peerStateSize.Set(float64(len(cab.peers)))
 				}
 				pState.lastConnTime = time.Now()
-				pState.lastConnAddr = ev.Conn.RemoteMultiaddr()
 				pState.connectFailures = 0 // reset connect failures on successful connection
 				cab.mu.Unlock()
 
@@ -265,7 +262,6 @@ func (cab *cachedAddrBook) GetCachedAddrs(p *peer.ID) []types.Multiaddr {
 		peerStateSize.Set(float64(len(cab.peers)))
 	}
 	cab.peers[*p].returnCount++
-	cab.peers[*p].lastReturnTime = time.Now()
 	cab.mu.Unlock()
 
 	var result []types.Multiaddr // convert to local Multiaddr type 🙃
