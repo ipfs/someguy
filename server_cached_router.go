@@ -10,6 +10,7 @@ import (
 	"github.com/ipfs/boxo/routing/http/types/iter"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/routing"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -68,10 +69,27 @@ func (r cachedRouter) FindProviders(ctx context.Context, key cid.Cid, limit int)
 // no point in trying to dispatch an additional FindPeer call.
 func (r cachedRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
 	it, err := r.router.FindPeers(ctx, pid, limit)
+
+	if err == routing.ErrNotFound {
+		// If we didn't find the peer, try the cache
+		cachedAddrs := r.withAddrsFromCache(addrQueryOriginPeers, &pid, nil)
+		if len(cachedAddrs) > 0 {
+			return iter.ToResultIter(iter.FromSlice([]*types.PeerRecord{
+				{
+					Schema: types.SchemaPeer,
+					ID:     &pid,
+					Addrs:  cachedAddrs,
+				},
+			})), nil
+		}
+		return nil, routing.ErrNotFound
+	}
+
 	if err != nil {
 		return nil, err
 	}
 
+	// If the peer was found, there is likely no point in looking up the cache (because kad-dht will connect to it as part of FindPeers), but we'll do it just in case.
 	return iter.Map(it, func(record iter.Result[*types.PeerRecord]) iter.Result[*types.PeerRecord] {
 		record.Val.Addrs = r.withAddrsFromCache(addrQueryOriginPeers, record.Val.ID, record.Val.Addrs)
 		return record
