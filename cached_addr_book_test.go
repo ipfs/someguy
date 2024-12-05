@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/event"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/p2p/host/eventbus"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -30,40 +30,34 @@ func TestBackground(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Create a test libp2p host
-	h, err := libp2p.New(libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/0"))
-	require.NoError(t, err)
-	defer h.Close()
+	// Create a real event bus
+	eventBus := eventbus.NewBus()
 
-	em, err := h.EventBus().Emitter(&event.EvtPeerIdentificationCompleted{})
+	emitter, err := eventBus.Emitter(new(event.EvtPeerIdentificationCompleted))
 	require.NoError(t, err)
-	defer em.Close()
+
+	// Use a mock host with a real event bus
+	mockHost := &mockHost{
+		eventBus: eventBus,
+	}
 
 	cab, err := newCachedAddrBook(WithAllowPrivateIPs())
 	require.NoError(t, err)
 
-	// Create a channel to signal when background processing is ready
-	ready := make(chan struct{})
+	ctx, cancel = context.WithTimeout(ctx, time.Second*5)
+	defer cancel()
+	go cab.background(ctx, mockHost)
 
-	// Start background process with ready signal
-	go func() {
-		// Signal ready before starting background process
-		close(ready)
-		cab.background(ctx, h)
-	}()
-
-	// Wait for background process to start
-	<-ready
-
-	// Create a test peer with new PeerID
+	// Create a test peer
 	testPeer, err := peer.Decode("12D3KooWCZ67sU8oCvKd82Y6c9NgpqgoZYuZEUcg4upHCjK3n1aj")
 	require.NoError(t, err)
 
-	// Simulate peer identification event
-	addr, _ := ma.NewMultiaddr("/ip4/127.0.0.1/tcp/1234")
+	// Create test address
+	addr, err := ma.NewMultiaddr("/ip4/127.0.0.1/tcp/1234")
+	require.NoError(t, err)
 
-	// Emit the event after setting up the waiter
-	err = em.Emit(event.EvtPeerIdentificationCompleted{
+	// Emit a real peer identification event
+	err = emitter.Emit(event.EvtPeerIdentificationCompleted{
 		Peer: testPeer,
 		Conn: &mockConnection{
 			remoteAddr: addr,
@@ -72,27 +66,13 @@ func TestBackground(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for {
-			_, exists := cab.peerCache.Get(testPeer)
-			if exists {
-				return
-			}
-			time.Sleep(30 * time.Millisecond)
-		}
-	}()
+	// Wait for the peer to be added to the cache
+	require.Eventually(t, func() bool {
+		_, exists := cab.peerCache.Get(testPeer)
+		return exists
+	}, time.Second*5, time.Millisecond*100, "peer was not added to cache")
 
-	// Wait for processing with timeout
-	select {
-	case <-done:
-		// Success case - continue to verification
-	case <-time.After(time.Second * 5):
-		t.Fatal("timeout waiting for peer to be added to peer state")
-	}
-
-	// Verify peer was added
+	// Verify peer state
 	pState, exists := cab.peerCache.Get(testPeer)
 	assert.True(t, exists)
 	assert.NotNil(t, pState)
@@ -139,6 +119,7 @@ func (mc *mockConnection) RemoteMultiaddr() ma.Multiaddr {
 
 type mockHost struct {
 	host.Host
+	eventBus event.Bus
 }
 
 func (mh *mockHost) Connect(ctx context.Context, pi peer.AddrInfo) error {
@@ -159,4 +140,8 @@ type mockNetwork struct {
 func (mn *mockNetwork) Connectedness(p peer.ID) network.Connectedness {
 	// Simulate not connected state
 	return network.NotConnected
+}
+
+func (mh *mockHost) EventBus() event.Bus {
+	return mh.eventBus
 }
