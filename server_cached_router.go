@@ -222,7 +222,7 @@ func (it *cacheFallbackIter) Close() error {
 	it.cancel()
 	go func() {
 		for it.ongoingLookups.Load() > 0 {
-			time.Sleep(time.Millisecond * 10)
+			time.Sleep(time.Millisecond * 100)
 		}
 		close(it.findPeersResult)
 	}()
