@@ -146,7 +146,7 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 					cab, ok := peerstore.GetCertifiedAddrBook(cab.addrBook)
 					if ok {
 						ttl := RecentlyConnectedAddrTTL
-						if host.Network().Connectedness(ev.Peer) == network.Connected || host.Network().Connectedness(ev.Peer) == network.Limited {
+						if hasValidConnectedness(host.Network().Connectedness(ev.Peer)) {
 							ttl = ConnectedAddrTTL
 						}
 						_, err := cab.ConsumePeerRecord(ev.SignedPeerRecord, ttl)
@@ -161,7 +161,7 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 				}
 			case event.EvtPeerConnectednessChanged:
 				// If the peer is not connected or limited, we update the TTL
-				if ev.Connectedness != network.Connected && ev.Connectedness != network.Limited {
+				if !hasValidConnectedness(ev.Connectedness) {
 					cab.addrBook.UpdateAddrs(ev.Peer, ConnectedAddrTTL, RecentlyConnectedAddrTTL)
 				}
 			}
@@ -269,4 +269,8 @@ func (cab *cachedAddrBook) GetCachedAddrs(p *peer.ID) []types.Multiaddr {
 		result = append(result, types.Multiaddr{Multiaddr: addr})
 	}
 	return result
+}
+
+func hasValidConnectedness(connectedness network.Connectedness) bool {
+	return connectedness == network.Connected || connectedness == network.Limited
 }
