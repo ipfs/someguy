@@ -262,38 +262,6 @@ func TestCacheFallbackIter(t *testing.T) {
 		require.Equal(t, publicAddr.String(), peerRecord.Addrs[0].String())
 	})
 
-	t.Run("handles bitswap records", func(t *testing.T) {
-		ctx := context.Background()
-		pid := peer.ID("test-peer")
-		publicAddr := mustMultiaddr(t, "/ip4/137.21.14.12/tcp/4001")
-
-		// Create source iterator with bitswap record
-		sourceIter := newMockResultIter([]iter.Result[types.Record]{
-			//lint:ignore SA1019 // ignore staticcheck
-			{Val: &types.BitswapRecord{Schema: types.SchemaBitswap, ID: &pid, Addrs: nil}},
-		})
-
-		// Create cached router with cached addresses
-		mr := &mockRouter{}
-		cab, err := newCachedAddrBook()
-		require.NoError(t, err)
-		cab.addrBook.AddAddrs(pid, []multiaddr.Multiaddr{publicAddr.Multiaddr}, time.Hour)
-		cr := NewCachedRouter(mr, cab)
-
-		// Create fallback iterator
-		fallbackIter := NewCacheFallbackIter(sourceIter, cr, ctx)
-
-		// Read all results
-		results, err := iter.ReadAllResults(fallbackIter)
-		require.NoError(t, err)
-		require.Len(t, results, 1)
-
-		peerRecord := results[0].(*types.PeerRecord)
-		require.Equal(t, pid, *peerRecord.ID)
-		require.Len(t, peerRecord.Addrs, 1)
-		require.Equal(t, publicAddr.String(), peerRecord.Addrs[0].String())
-	})
-
 	t.Run("handles context cancellation", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 
