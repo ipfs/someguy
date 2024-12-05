@@ -71,8 +71,10 @@ func (r cachedRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (it
 	it, err := r.router.FindPeers(ctx, pid, limit)
 
 	if err == routing.ErrNotFound {
+		// ErrNotFound will be returned if either dialing the peer failed or the peer was not found
+		r.cachedAddrBook.RecordFailedConnection(pid)
 		// If we didn't find the peer, try the cache
-		cachedAddrs := r.withAddrsFromCache(addrQueryOriginPeers, &pid, nil)
+		cachedAddrs := r.withAddrsFromCache(addrQueryOriginPeers, pid, nil)
 		if len(cachedAddrs) > 0 {
 			return iter.ToResultIter(iter.FromSlice([]*types.PeerRecord{
 				{
@@ -91,14 +93,14 @@ func (r cachedRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (it
 
 	// If the peer was found, there is likely no point in looking up the cache (because kad-dht will connect to it as part of FindPeers), but we'll do it just in case.
 	return iter.Map(it, func(record iter.Result[*types.PeerRecord]) iter.Result[*types.PeerRecord] {
-		record.Val.Addrs = r.withAddrsFromCache(addrQueryOriginPeers, record.Val.ID, record.Val.Addrs)
+		record.Val.Addrs = r.withAddrsFromCache(addrQueryOriginPeers, *record.Val.ID, record.Val.Addrs)
 		return record
 	}), nil
 }
 
 // withAddrsFromCache returns the best list of addrs for specified [peer.ID].
 // It will consult cache ONLY if the addrs slice passed to it is empty.
-func (r cachedRouter) withAddrsFromCache(queryOrigin string, pid *peer.ID, addrs []types.Multiaddr) []types.Multiaddr {
+func (r cachedRouter) withAddrsFromCache(queryOrigin string, pid peer.ID, addrs []types.Multiaddr) []types.Multiaddr {
 	// skip cache if we already have addrs
 	if len(addrs) > 0 {
 		peerAddrLookups.WithLabelValues(addrCacheStateUnused, queryOrigin).Inc()
@@ -148,13 +150,14 @@ func (it *cacheFallbackIter) Next() bool {
 	if it.sourceIter.Next() {
 		val := it.sourceIter.Val()
 		handleRecord := func(id *peer.ID, record *types.PeerRecord) bool {
-			record.Addrs = it.router.withAddrsFromCache(addrQueryOriginProviders, id, record.Addrs)
+			record.Addrs = it.router.withAddrsFromCache(addrQueryOriginProviders, *id, record.Addrs)
 			if record.Addrs != nil {
 				it.current = iter.Result[types.Record]{Val: record}
 				return true
 			}
 			logger.Infow("no cached addresses found in cacheFallbackIter, dispatching find peers", "peer", id)
 
+			// TODO: Before dispatching, implement a backoff strategy based on the failed connection time
 			it.ongoingLookups.Add(1) // important to increment here since Next() may be called again synchronously
 			// If a record has no addrs, we dispatch a lookup to find addresses
 			go it.dispatchFindPeer(*record)

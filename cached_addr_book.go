@@ -245,14 +245,7 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 			})
 			if err != nil {
 				logger.Debugf("failed to connect to peer %s: %v", p, err)
-				pState, exists := cab.peerCache.Get(p)
-				if !exists {
-					logger.Errorf("peer %s not in peer cache but found in cached address book. This should not happen. ", p)
-					pState = peerState{}
-				}
-				pState.connectFailures++
-				pState.lastFailedConnTime = time.Now()
-				cab.peerCache.Add(p, pState)
+				cab.RecordFailedConnection(p)
 			}
 		}()
 	}
@@ -260,8 +253,8 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 }
 
 // Returns the cached addresses for a peer, incrementing the return count
-func (cab *cachedAddrBook) GetCachedAddrs(p *peer.ID) []types.Multiaddr {
-	cachedAddrs := cab.addrBook.Addrs(*p)
+func (cab *cachedAddrBook) GetCachedAddrs(p peer.ID) []types.Multiaddr {
+	cachedAddrs := cab.addrBook.Addrs(p)
 
 	if len(cachedAddrs) == 0 {
 		return nil
@@ -272,6 +265,18 @@ func (cab *cachedAddrBook) GetCachedAddrs(p *peer.ID) []types.Multiaddr {
 		result = append(result, types.Multiaddr{Multiaddr: addr})
 	}
 	return result
+}
+
+// Update the peer cache with information about a failed connection
+// This should be called when a connection attempt to a peer fails
+func (cab *cachedAddrBook) RecordFailedConnection(p peer.ID) {
+	pState, exists := cab.peerCache.Get(p)
+	if !exists {
+		pState = peerState{}
+	}
+	pState.lastFailedConnTime = time.Now()
+	pState.connectFailures++
+	cab.peerCache.Add(p, pState)
 }
 
 func hasValidConnectedness(connectedness network.Connectedness) bool {
