@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/ipfs/boxo/routing/http/types"
 	"github.com/libp2p/go-libp2p-kad-dht/amino"
 	"github.com/libp2p/go-libp2p/core/event"
@@ -62,18 +63,22 @@ const (
 	// How long to wait for a connect in a probe to complete.
 	// The worst case is a peer behind a relay, so we use the relay connect timeout.
 	ConnectTimeout = relay.ConnectTimeout
+
+	// How many peers to cache in the peer state cache
+	// 100_000 is also the default number of signed peer records cached by the memory address book.
+	PeerCacheSize = 100_000
 )
 
 type peerState struct {
-	lastConnTime    time.Time // last time we successfully connected to this peer
-	returnCount     int       // number of times we've returned this peer from the cache
-	connectFailures int       // number of times we've failed to connect to this peer
+	lastConnTime       time.Time // last time we successfully connected to this peer
+	lastFailedConnTime time.Time // last time we failed to find or connect to this peer
+	connectFailures    int       // number of times we've failed to connect to this peer
+	returnCount        int       // number of times we've returned this peer from the cache //TODO: remove
 }
 
 type cachedAddrBook struct {
-	addrBook        peerstore.AddrBook
-	peers           map[peer.ID]*peerState
-	mu              sync.RWMutex // Add mutex for thread safety
+	addrBook        peerstore.AddrBook                     // memory address book
+	peerCache       *lru.TwoQueueCache[peer.ID, peerState] // LRU cache with additional metadata about peer
 	isProbing       atomic.Bool
 	allowPrivateIPs bool // for testing
 }
@@ -88,9 +93,14 @@ func WithAllowPrivateIPs() AddrBookOption {
 }
 
 func newCachedAddrBook(opts ...AddrBookOption) (*cachedAddrBook, error) {
+	peerCache, err := lru.New2Q[peer.ID, peerState](PeerCacheSize)
+	if err != nil {
+		return nil, err
+	}
+
 	cab := &cachedAddrBook{
-		peers:    make(map[peer.ID]*peerState),
-		addrBook: pstoremem.NewAddrBook(),
+		peerCache: peerCache,
+		addrBook:  pstoremem.NewAddrBook(),
 	}
 
 	for _, opt := range opts {
@@ -130,16 +140,15 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 		case ev := <-sub.Out():
 			switch ev := ev.(type) {
 			case event.EvtPeerIdentificationCompleted:
-				cab.mu.Lock()
-				pState, exists := cab.peers[ev.Peer]
+				pState, exists := cab.peerCache.Get(ev.Peer)
 				if !exists {
-					pState = &peerState{}
-					cab.peers[ev.Peer] = pState
-					peerStateSize.Set(float64(len(cab.peers)))
+					pState = peerState{}
 				}
 				pState.lastConnTime = time.Now()
-				pState.connectFailures = 0 // reset connect failures on successful connection
-				cab.mu.Unlock()
+				pState.lastFailedConnTime = time.Time{} // reset failed connection time
+				pState.connectFailures = 0              // reset connect failures on successful connection
+				cab.peerCache.Add(ev.Peer, pState)
+				peerStateSize.Set(float64(cab.peerCache.Len())) // update metric
 
 				ttl := getTTL(host.Network().Connectedness(ev.Peer))
 				if ev.SignedPeerRecord != nil {
@@ -170,7 +179,6 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 			logger.Debug("Starting to probe peers")
 			go cab.probePeers(ctx, host)
 		}
-		// TODO: Add some cleanup logic to remove peers that haven't been returned from the cache in a while or have failed to connect too many times
 	}
 }
 
@@ -191,22 +199,25 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 	semaphore := make(chan struct{}, MaxConcurrentProbes)
 
 	for i, p := range cab.addrBook.PeersWithAddrs() {
-		connectedness := host.Network().Connectedness(p)
-		if connectedness == network.Connected || connectedness == network.Limited {
+		if hasValidConnectedness(host.Network().Connectedness(p)) {
 			continue // don't probe connected peers
 		}
 
-		cab.mu.RLock()
-		if time.Since(cab.peers[p].lastConnTime) < PeerProbeThreshold {
-			cab.mu.RUnlock()
+		pState, exists := cab.peerCache.Get(p)
+		if !exists {
+			logger.Errorf("peer %s not in peer cache but found in cached address book. This should not happen. ", p)
+			continue // TODO: maybe we should still probe them?
+		}
+
+		if time.Since(pState.lastConnTime) < PeerProbeThreshold {
 			continue // don't probe peers below the probe threshold
 		}
-		if cab.peers[p].connectFailures > MaxConnectFailures {
+
+		if pState.connectFailures > MaxConnectFailures {
+			// TODO: maybe implement a backoff strategy instead of clearing the peer's addresses
 			cab.addrBook.ClearAddrs(p) // clear the peer's addresses
-			cab.mu.RUnlock()
-			continue // don't probe this peer
+			continue                   // don't probe this peer
 		}
-		cab.mu.RUnlock()
 		addrs := cab.addrBook.Addrs(p)
 
 		if !cab.allowPrivateIPs {
@@ -235,9 +246,14 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 			})
 			if err != nil {
 				logger.Debugf("failed to connect to peer %s: %v", p, err)
-				cab.mu.Lock() // Lock before accessing shared state
-				cab.peers[p].connectFailures++
-				cab.mu.Unlock()
+				pState, exists := cab.peerCache.Get(p)
+				if !exists {
+					logger.Errorf("peer %s not in peer cache but found in cached address book. This should not happen. ", p)
+					pState = peerState{}
+				}
+				pState.connectFailures++
+				pState.lastFailedConnTime = time.Now()
+				cab.peerCache.Add(p, pState)
 			}
 		}()
 	}
@@ -252,14 +268,13 @@ func (cab *cachedAddrBook) GetCachedAddrs(p *peer.ID) []types.Multiaddr {
 		return nil
 	}
 
-	cab.mu.Lock()
-	// Initialize peer state if it doesn't exist
-	if _, exists := cab.peers[*p]; !exists {
-		cab.peers[*p] = &peerState{}
-		peerStateSize.Set(float64(len(cab.peers)))
+	pState, exists := cab.peerCache.Get(*p)
+	if !exists {
+		pState = peerState{}
 	}
-	cab.peers[*p].returnCount++
-	cab.mu.Unlock()
+	pState.returnCount++
+	cab.peerCache.Add(*p, pState)
+	peerStateSize.Set(float64(cab.peerCache.Len()))
 
 	var result []types.Multiaddr // convert to local Multiaddr type 🙃
 	for _, addr := range cachedAddrs {

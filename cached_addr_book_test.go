@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p/core/event"
+	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	ma "github.com/multiformats/go-multiaddr"
@@ -19,7 +21,7 @@ func TestCachedAddrBook(t *testing.T) {
 	cab, err := newCachedAddrBook(WithAllowPrivateIPs())
 	require.NoError(t, err)
 	require.NotNil(t, cab)
-	require.NotNil(t, cab.peers)
+	require.NotNil(t, cab.peerCache)
 	require.NotNil(t, cab.addrBook)
 }
 
@@ -37,14 +39,16 @@ func TestGetCachedAddrs(t *testing.T) {
 	cab.addrBook.AddAddrs(testPeer, []ma.Multiaddr{addr1, addr2}, time.Hour)
 
 	// Initialize peer state
-	cab.peers[testPeer] = &peerState{}
+	cab.peerCache.Add(testPeer, peerState{})
 
 	// Test getting addresses
 	addrs := cab.GetCachedAddrs(&testPeer)
 	assert.Len(t, addrs, 2)
 
-	// Verify return count and time were updated
-	assert.Equal(t, 1, cab.peers[testPeer].returnCount)
+	// Verify return count was updated
+	pState, exists := cab.peerCache.Get(testPeer)
+	assert.True(t, exists)
+	assert.Equal(t, 1, pState.returnCount)
 }
 
 func TestBackground(t *testing.T) {
@@ -98,9 +102,7 @@ func TestBackground(t *testing.T) {
 	go func() {
 		defer close(done)
 		for {
-			cab.mu.RLock()
-			_, exists := cab.peers[testPeer]
-			cab.mu.RUnlock()
+			_, exists := cab.peerCache.Get(testPeer)
 			if exists {
 				return
 			}
@@ -117,11 +119,9 @@ func TestBackground(t *testing.T) {
 	}
 
 	// Verify peer was added
-	cab.mu.RLock()
-	peerState, exists := cab.peers[testPeer]
+	pState, exists := cab.peerCache.Get(testPeer)
 	assert.True(t, exists)
-	assert.NotNil(t, peerState)
-	cab.mu.RUnlock()
+	assert.NotNil(t, pState)
 }
 
 func TestProbePeers(t *testing.T) {
@@ -129,9 +129,7 @@ func TestProbePeers(t *testing.T) {
 	defer cancel()
 
 	// Create a test libp2p host
-	h, err := libp2p.New()
-	require.NoError(t, err)
-	defer h.Close()
+	mockHost := &mockHost{}
 
 	cab, err := newCachedAddrBook(WithAllowPrivateIPs())
 	require.NoError(t, err)
@@ -142,15 +140,17 @@ func TestProbePeers(t *testing.T) {
 	cab.addrBook.AddAddrs(testPeer, []ma.Multiaddr{addr}, time.Hour)
 
 	// Initialize peer state with old connection time
-	cab.peers[testPeer] = &peerState{
+	cab.peerCache.Add(testPeer, peerState{
 		lastConnTime: time.Now().Add(-2 * PeerProbeThreshold),
-	}
+	})
 
-	// Run probe
-	cab.probePeers(ctx, h)
+	// Run probe with mockHost instead of h
+	cab.probePeers(ctx, mockHost)
 
-	// Verify connect failures increased (since connection will fail in test)
-	assert.Equal(t, 1, cab.peers[testPeer].connectFailures)
+	// Verify connect failures increased
+	pState, exists := cab.peerCache.Get(testPeer)
+	assert.True(t, exists)
+	assert.Equal(t, 1, pState.connectFailures)
 }
 
 // Mock connection for testing
@@ -161,4 +161,28 @@ type mockConnection struct {
 
 func (mc *mockConnection) RemoteMultiaddr() ma.Multiaddr {
 	return mc.remoteAddr
+}
+
+type mockHost struct {
+	host.Host
+}
+
+func (mh *mockHost) Connect(ctx context.Context, pi peer.AddrInfo) error {
+	// Simulate connection failure
+	return fmt.Errorf("mock connection failure")
+}
+
+// Add Network method to mockHost
+func (mh *mockHost) Network() network.Network {
+	return &mockNetwork{}
+}
+
+// Add mockNetwork implementation
+type mockNetwork struct {
+	network.Network
+}
+
+func (mn *mockNetwork) Connectedness(p peer.ID) network.Connectedness {
+	// Simulate not connected state
+	return network.NotConnected
 }
