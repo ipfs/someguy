@@ -141,14 +141,11 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 				pState.connectFailures = 0 // reset connect failures on successful connection
 				cab.mu.Unlock()
 
+				ttl := getTTL(host.Network().Connectedness(ev.Peer))
 				if ev.SignedPeerRecord != nil {
 					logger.Debug("Caching signed peer record")
 					cab, ok := peerstore.GetCertifiedAddrBook(cab.addrBook)
 					if ok {
-						ttl := RecentlyConnectedAddrTTL
-						if hasValidConnectedness(host.Network().Connectedness(ev.Peer)) {
-							ttl = ConnectedAddrTTL
-						}
 						_, err := cab.ConsumePeerRecord(ev.SignedPeerRecord, ttl)
 						if err != nil {
 							logger.Warnf("failed to consume signed peer record: %v", err)
@@ -157,7 +154,7 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 				} else {
 					logger.Debug("No signed peer record, caching listen addresses")
 					// We don't have a signed peer record, so we use the listen addresses
-					cab.addrBook.AddAddrs(ev.Peer, ev.ListenAddrs, ConnectedAddrTTL)
+					cab.addrBook.AddAddrs(ev.Peer, ev.ListenAddrs, ttl)
 				}
 			case event.EvtPeerConnectednessChanged:
 				// If the peer is not connected or limited, we update the TTL
@@ -273,4 +270,11 @@ func (cab *cachedAddrBook) GetCachedAddrs(p *peer.ID) []types.Multiaddr {
 
 func hasValidConnectedness(connectedness network.Connectedness) bool {
 	return connectedness == network.Connected || connectedness == network.Limited
+}
+
+func getTTL(connectedness network.Connectedness) time.Duration {
+	if hasValidConnectedness(connectedness) {
+		return ConnectedAddrTTL
+	}
+	return RecentlyConnectedAddrTTL
 }
