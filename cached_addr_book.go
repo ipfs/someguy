@@ -51,14 +51,11 @@ const (
 	// How long to wait since last connection before probing a peer again
 	PeerProbeThreshold = time.Hour
 
-	// How often to run the probe peers function (Same as RecentlyConnectedAddrTTL)
+	// How often to run the probe peers loop
 	ProbeInterval = time.Minute * 15
 
 	// How many concurrent probes to run at once
 	MaxConcurrentProbes = 20
-
-	// How many connect failures to tolerate before clearing a peer's addresses
-	MaxConnectFailures = 3
 
 	// How long to wait for a connect in a probe to complete.
 	// The worst case is a peer behind a relay, so we use the relay connect timeout.
@@ -72,7 +69,7 @@ const (
 type peerState struct {
 	lastConnTime       time.Time // last time we successfully connected to this peer
 	lastFailedConnTime time.Time // last time we failed to find or connect to this peer
-	connectFailures    int       // number of times we've failed to connect to this peer
+	connectFailures    uint      // number of times we've failed to connect to this peer
 }
 
 type cachedAddrBook struct {
@@ -202,21 +199,10 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 			continue // don't probe connected peers
 		}
 
-		pState, exists := cab.peerCache.Get(p)
-		if !exists {
-			logger.Errorf("peer %s not in peer cache but found in cached address book. This should not happen. ", p)
-			continue // TODO: maybe we should still probe them?
+		if !cab.ShouldProbePeer(p) {
+			continue
 		}
 
-		if time.Since(pState.lastConnTime) < PeerProbeThreshold {
-			continue // don't probe peers below the probe threshold
-		}
-
-		if pState.connectFailures > MaxConnectFailures {
-			// TODO: maybe implement a backoff strategy instead of clearing the peer's addresses
-			cab.addrBook.ClearAddrs(p) // clear the peer's addresses
-			continue                   // don't probe this peer
-		}
 		addrs := cab.addrBook.Addrs(p)
 
 		if !cab.allowPrivateIPs {
@@ -277,6 +263,28 @@ func (cab *cachedAddrBook) RecordFailedConnection(p peer.ID) {
 	pState.lastFailedConnTime = time.Now()
 	pState.connectFailures++
 	cab.peerCache.Add(p, pState)
+}
+
+// Returns true if we should probe a peer (either by dialing known addresses or by dispatching a FindPeer)
+// based on the last failed connection time and connection failures
+func (cab *cachedAddrBook) ShouldProbePeer(p peer.ID) bool {
+	pState, exists := cab.peerCache.Get(p)
+	if !exists {
+		return true // default to probing if the peer is not in the cache
+	}
+
+	var backoffDuration time.Duration
+	if pState.connectFailures > 0 {
+		// Calculate backoff only if we have failures
+		// this is effectively 2^(connectFailures - 1) * PeerProbeThreshold
+		// A single failure results in a 1 hour backoff
+		backoffDuration = PeerProbeThreshold * time.Duration(1<<(pState.connectFailures-1))
+	} else {
+		backoffDuration = PeerProbeThreshold
+	}
+
+	// Only dispatch if we've waited long enough based on the backoff
+	return time.Since(pState.lastFailedConnTime) > backoffDuration
 }
 
 func hasValidConnectedness(connectedness network.Connectedness) bool {

@@ -104,7 +104,96 @@ func TestProbePeers(t *testing.T) {
 	// Verify connect failures increased
 	pState, exists := cab.peerCache.Get(testPeer)
 	assert.True(t, exists)
-	assert.Equal(t, 1, pState.connectFailures)
+	assert.Equal(t, pState.connectFailures, uint(1))
+}
+
+func TestShouldProbePeer(t *testing.T) {
+	t.Parallel()
+
+	cab, err := newCachedAddrBook()
+	require.NoError(t, err)
+
+	testPeer := peer.ID("test-peer")
+
+	tests := []struct {
+		name           string
+		peerState      peerState
+		expectedResult bool
+	}{
+		{
+			name:           "peer not in cache",
+			peerState:      peerState{},
+			expectedResult: true,
+		},
+		{
+			name: "no failures, within threshold",
+			peerState: peerState{
+				lastFailedConnTime: time.Now().Add(-30 * time.Minute),
+				connectFailures:    0,
+			},
+			expectedResult: false,
+		},
+		{
+			name: "no failures, beyond threshold",
+			peerState: peerState{
+				lastFailedConnTime: time.Now().Add(-2 * PeerProbeThreshold),
+				connectFailures:    0,
+			},
+			expectedResult: true,
+		},
+		{
+			name: "one failure, within backoff",
+			peerState: peerState{
+				lastFailedConnTime: time.Now().Add(-90 * time.Minute),
+				connectFailures:    1,
+			},
+			expectedResult: true,
+		},
+		{
+			name: "one failure, beyond backoff",
+			peerState: peerState{
+				lastFailedConnTime: time.Now().Add(-3 * PeerProbeThreshold),
+				connectFailures:    1,
+			},
+			expectedResult: true,
+		},
+		{
+			name: "two failures, within backoff",
+			peerState: peerState{
+				lastFailedConnTime: time.Now().Add(-90 * time.Minute),
+				connectFailures:    2,
+			},
+			expectedResult: false,
+		},
+		{
+			name: "two failures, beyond backoff",
+			peerState: peerState{
+				lastFailedConnTime: time.Now().Add(-2 * PeerProbeThreshold),
+				connectFailures:    2,
+			},
+			expectedResult: true,
+		},
+		{
+			name: "never failed connection",
+			peerState: peerState{
+				lastFailedConnTime: time.Time{}, // zero time
+				connectFailures:    0,
+			},
+			expectedResult: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.peerState != (peerState{}) {
+				cab.peerCache.Add(testPeer, tt.peerState)
+			}
+			result := cab.ShouldProbePeer(testPeer)
+			assert.Equal(t, tt.expectedResult, result,
+				"expected ShouldProbePeer to return %v for case: %s",
+				tt.expectedResult, tt.name)
+		})
+	}
 }
 
 // Mock connection for testing

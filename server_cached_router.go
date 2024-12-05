@@ -157,10 +157,11 @@ func (it *cacheFallbackIter) Next() bool {
 			}
 			logger.Infow("no cached addresses found in cacheFallbackIter, dispatching find peers", "peer", id)
 
-			// TODO: Before dispatching, implement a backoff strategy based on the failed connection time
-			it.ongoingLookups.Add(1) // important to increment here since Next() may be called again synchronously
-			// If a record has no addrs, we dispatch a lookup to find addresses
-			go it.dispatchFindPeer(*record)
+			if it.router.cachedAddrBook.ShouldProbePeer(*id) {
+				it.ongoingLookups.Add(1) // important to increment before dispatchFindPeer
+				// If a record has no addrs, we dispatch a lookup to find addresses
+				go it.dispatchFindPeer(*record)
+			}
 
 			return it.Next() // Recursively call Next() to either read from sourceIter or wait for lookup result
 		}
