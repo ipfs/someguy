@@ -25,32 +25,6 @@ func TestCachedAddrBook(t *testing.T) {
 	require.NotNil(t, cab.addrBook)
 }
 
-func TestGetCachedAddrs(t *testing.T) {
-	cab, err := newCachedAddrBook(WithAllowPrivateIPs())
-	require.NoError(t, err)
-
-	// Create a test peer with new PeerID
-	testPeer, err := peer.Decode("12D3KooWCZ67sU8oCvKd82Y6c9NgpqgoZYuZEUcg4upHCjK3n1aj")
-	require.NoError(t, err)
-
-	// Add test addresses
-	addr1, _ := ma.NewMultiaddr("/ip4/127.0.0.1/tcp/1234")
-	addr2, _ := ma.NewMultiaddr("/ip4/127.0.0.1/tcp/5678")
-	cab.addrBook.AddAddrs(testPeer, []ma.Multiaddr{addr1, addr2}, time.Hour)
-
-	// Initialize peer state
-	cab.peerCache.Add(testPeer, peerState{})
-
-	// Test getting addresses
-	addrs := cab.GetCachedAddrs(&testPeer)
-	assert.Len(t, addrs, 2)
-
-	// Verify return count was updated
-	pState, exists := cab.peerCache.Get(testPeer)
-	assert.True(t, exists)
-	assert.Equal(t, 1, pState.returnCount)
-}
-
 func TestBackground(t *testing.T) {
 	t.Skip("skipping until this test is less flaky")
 	ctx, cancel := context.WithCancel(context.Background())

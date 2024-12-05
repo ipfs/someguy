@@ -73,7 +73,6 @@ type peerState struct {
 	lastConnTime       time.Time // last time we successfully connected to this peer
 	lastFailedConnTime time.Time // last time we failed to find or connect to this peer
 	connectFailures    int       // number of times we've failed to connect to this peer
-	returnCount        int       // number of times we've returned this peer from the cache //TODO: remove
 }
 
 type cachedAddrBook struct {
@@ -267,14 +266,6 @@ func (cab *cachedAddrBook) GetCachedAddrs(p *peer.ID) []types.Multiaddr {
 	if len(cachedAddrs) == 0 {
 		return nil
 	}
-
-	pState, exists := cab.peerCache.Get(*p)
-	if !exists {
-		pState = peerState{}
-	}
-	pState.returnCount++
-	cab.peerCache.Add(*p, pState)
-	peerStateSize.Set(float64(cab.peerCache.Len()))
 
 	var result []types.Multiaddr // convert to local Multiaddr type 🙃
 	for _, addr := range cachedAddrs {
