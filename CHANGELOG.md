@@ -16,8 +16,8 @@ The following emojis are used to highlight certain changes:
 ### Added
 
 - Default caching of peer addresses for 48h to match [provider record expiration on Amino DHT](https://github.com/libp2p/go-libp2p-kad-dht/blob/v0.28.1/amino/defaults.go#L40-L43). Someguy will return cached addresses for peers without multiaddrs in `FindProviders` if there are no addresses for a provider. This can be enabled via `SOMEGUY_CACHED_ADDR_BOOK=true|false` (enabled by default)
-- Added a new `cachedAddrBook` implementation that caches peer addresses by subscribing to Identify events and probes those peers in the background.
-- Added a new `cachedRouter` that uses `cachedAddrBook` to retrieve cached addresses for peers without multiaddrs. If a Peer is encountered with no cached addresses, `FindPeer` is dispatched in the background.
+  - Added a new `cachedAddrBook` implementation that caches peer addresses by subscribing to Identify events and probes those peers in the background.
+  - Added a new `cachedRouter` that uses `cachedAddrBook` to retrieve cached addresses for peers without multiaddrs. If a Peer is encountered with no cached addresses, `FindPeer` is dispatched in the background.
 
 ### Changed
 
