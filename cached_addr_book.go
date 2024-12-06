@@ -23,25 +23,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-var (
-	probeDurationHistogram = promauto.NewHistogram(prometheus.HistogramOpts{
-		Name:      "probe_duration_seconds",
-		Namespace: name,
-		Subsystem: "cached_addr_book",
-		Help:      "Duration of peer probing operations in seconds",
-		// Buckets probe durations from 1s to 5 minutes
-		Buckets: []float64{1, 2, 5, 10, 30, 60, 120, 300},
-	})
-
-	peerStateSize = promauto.NewGauge(prometheus.GaugeOpts{
-		Name:      "peer_state_size",
-		Subsystem: "cached_addr_book",
-		Namespace: name,
-		Help:      "Number of peers object currently in the peer state",
-	})
-)
-
 const (
+	Subsystem = "cached_addr_book"
 	// The TTL to keep recently connected peers for. Same as [amino.DefaultProvideValidity] in go-libp2p-kad-dht
 	RecentlyConnectedAddrTTL = amino.DefaultProvideValidity
 
@@ -64,6 +47,31 @@ const (
 	// How many peers to cache in the peer state cache
 	// 100_000 is also the default number of signed peer records cached by the memory address book.
 	PeerCacheSize = 100_000
+)
+
+var (
+	probeDurationHistogram = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:      "probe_duration_seconds",
+		Namespace: name,
+		Subsystem: Subsystem,
+		Help:      "Duration of peer probing operations in seconds",
+		// Buckets probe durations from 1s to 5 minutes
+		Buckets: []float64{1, 2, 5, 10, 30, 60, 120, 300},
+	})
+
+	probedPeersCounter = promauto.NewCounter(prometheus.CounterOpts{
+		Name:      "probed_peers",
+		Subsystem: Subsystem,
+		Namespace: name,
+		Help:      "Number of peers probed",
+	})
+
+	peerStateSize = promauto.NewGauge(prometheus.GaugeOpts{
+		Name:      "peer_state_size",
+		Subsystem: Subsystem,
+		Namespace: name,
+		Help:      "Number of peers object currently in the peer state",
+	})
 )
 
 type peerState struct {
@@ -220,7 +228,7 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 				<-semaphore // Release semaphore
 				wg.Done()
 			}()
-
+			probedPeersCounter.Inc()
 			ctx, cancel := context.WithTimeout(ctx, ConnectTimeout)
 			defer cancel()
 			logger.Debugf("Probe %d: PeerID: %s, Addrs: %v", i+1, p, addrs)
