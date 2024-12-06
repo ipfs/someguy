@@ -55,8 +55,8 @@ var (
 		Namespace: name,
 		Subsystem: Subsystem,
 		Help:      "Duration of peer probing operations in seconds",
-		// Buckets probe durations from 1s to 5 minutes
-		Buckets: []float64{1, 2, 5, 10, 30, 60, 120, 300},
+		// Buckets probe durations from 5s to 15 minutes
+		Buckets: []float64{5, 10, 30, 60, 120, 300, 600, 900},
 	})
 
 	probedPeersCounter = promauto.NewCounter(prometheus.CounterOpts{
