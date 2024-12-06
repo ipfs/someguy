@@ -45,8 +45,11 @@ const (
 	ConnectTimeout = relay.ConnectTimeout
 
 	// How many peers to cache in the peer state cache
-	// 100_000 is also the default number of signed peer records cached by the memory address book.
-	PeerCacheSize = 100_000
+	// 1_000_000 is 10x the default number of signed peer records cached by the memory address book.
+	PeerCacheSize = 1_000_000
+
+	// Maximum backoff duration for probing a peer
+	MaxBackoffDuration = time.Hour * 24
 )
 
 var (
@@ -285,8 +288,9 @@ func (cab *cachedAddrBook) ShouldProbePeer(p peer.ID) bool {
 	if pState.connectFailures > 0 {
 		// Calculate backoff only if we have failures
 		// this is effectively 2^(connectFailures - 1) * PeerProbeThreshold
-		// A single failure results in a 1 hour backoff
+		// A single failure results in a 1 hour backoff and each additional failure doubles the backoff up to 24 hours
 		backoffDuration = PeerProbeThreshold * time.Duration(1<<(pState.connectFailures-1))
+		backoffDuration = min(backoffDuration, MaxBackoffDuration) // clamp to max backoff duration
 	} else {
 		backoffDuration = PeerProbeThreshold
 	}
