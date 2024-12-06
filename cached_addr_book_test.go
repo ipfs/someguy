@@ -168,7 +168,7 @@ func TestShouldProbePeer(t *testing.T) {
 		{
 			name: "two failures, beyond backoff",
 			peerState: peerState{
-				lastFailedConnTime: time.Now().Add(-2 * PeerProbeThreshold),
+				lastFailedConnTime: time.Now().Add(-3 * PeerProbeThreshold),
 				connectFailures:    2,
 			},
 			expectedResult: true,
