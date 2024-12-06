@@ -181,6 +181,7 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 				continue
 			}
 			logger.Debug("Starting to probe peers")
+			cab.isProbing.Store(true)
 			go cab.probePeers(ctx, host)
 		}
 	}
@@ -188,7 +189,6 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 
 // Loops over all peers with addresses and probes them if they haven't been probed recently
 func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
-	cab.isProbing.Store(true)
 	defer cab.isProbing.Store(false)
 
 	start := time.Now()
@@ -222,8 +222,8 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 		}
 
 		wg.Add(1)
+		semaphore <- struct{}{}
 		go func() {
-			semaphore <- struct{}{}
 			defer func() {
 				<-semaphore // Release semaphore
 				wg.Done()
