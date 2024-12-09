@@ -324,15 +324,20 @@ func TestCacheFallbackIter(t *testing.T) {
 	t.Run("handles context cancellation during lookup", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		pid := peer.ID("test-peer")
+		publicAddr := mustMultiaddr(t, "/ip4/137.21.14.12/tcp/4001")
 
 		// Create source iterator with record without addresses
 		sourceIter := newMockResultIter([]iter.Result[types.Record]{
 			{Val: &types.PeerRecord{Schema: "peer", ID: &pid, Addrs: nil}},
 		})
 
-		// Create mock router with FindPeers that returns ErrNotFound
+		// Create mock router with FindPeers that returns
 		mr := &mockRouter{}
-		mr.On("FindPeers", mock.Anything, pid, 1).Return(nil, routing.ErrNotFound)
+		// mr.On("FindPeers", mock.Anything, pid, 1).Return(nil, routing.ErrNotFound)
+		findPeersIter := newMockResultIter([]iter.Result[*types.PeerRecord]{
+			{Val: &types.PeerRecord{Schema: "peer", ID: &pid, Addrs: []types.Multiaddr{publicAddr}}},
+		})
+		mr.On("FindPeers", mock.Anything, pid, 1).Return(findPeersIter, nil)
 
 		// Create cached router
 		cab, err := newCachedAddrBook()
@@ -342,22 +347,14 @@ func TestCacheFallbackIter(t *testing.T) {
 		// Create fallback iterator
 		fallbackIter := NewCacheFallbackIter(sourceIter, cr, ctx)
 
-		// First Next() should trigger lookup
-		require.True(t, fallbackIter.Next())
-
 		// Cancel context during lookup
 		cancel()
 
-		// Next() should return false
+		// First Next() should trigger lookup
 		require.False(t, fallbackIter.Next())
-
-		// Val() should return the record with no addrs
-		result := fallbackIter.Val()
-		require.Equal(t, pid, *result.Val.(*types.PeerRecord).ID)
-		require.Len(t, result.Val.(*types.PeerRecord).Addrs, 0)
 	})
 
-	t.Run("handles FindPeers error gracefully", func(t *testing.T) {
+	t.Run("Fallback FindPeers with no addresses is omitted from result", func(t *testing.T) {
 		ctx := context.Background()
 		pid := peer.ID("test-peer")
 
@@ -381,8 +378,7 @@ func TestCacheFallbackIter(t *testing.T) {
 		// Should still get a result, but with no addresses
 		results, err := iter.ReadAllResults(fallbackIter)
 		require.NoError(t, err)
-		require.Len(t, results, 1)
-		require.Empty(t, results[0].(*types.PeerRecord).Addrs)
+		require.Len(t, results, 0)
 	})
 
 	t.Run("handles multiple records with mixed address states", func(t *testing.T) {

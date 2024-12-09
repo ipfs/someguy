@@ -186,9 +186,14 @@ func (it *cacheFallbackIter) Next() bool {
 		logger.Infow("waiting for ongoing find peers result")
 		select {
 		case result, ok := <-it.findPeersResult:
-			if ok {
+			if !ok {
+				return false // channel closed. We're done
+			}
+			if result.Addrs != nil { // Only if the lookup returned a result and it has addrs
 				it.current = iter.Result[types.Record]{Val: &result}
 				return true
+			} else {
+				return it.Next() // recursively call Next() in case there are more ongoing lookups
 			}
 		case <-it.ctx.Done():
 			return false
@@ -220,7 +225,7 @@ func (it *cacheFallbackIter) dispatchFindPeer(record types.PeerRecord) {
 		return
 	}
 	if len(peers) > 0 {
-		// If we found the peer, pass back
+		// If we found the peer, pass back the result
 		it.findPeersResult <- *peers[0]
 	} else {
 		it.findPeersResult <- record // pass back the record with no addrs
