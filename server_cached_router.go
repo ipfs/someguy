@@ -11,7 +11,6 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/routing"
-	ma "github.com/multiformats/go-multiaddr"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -241,12 +240,4 @@ func (it *cacheFallbackIter) Close() error {
 		close(it.findPeersResult)
 	}()
 	return it.sourceIter.Close()
-}
-
-func ToMultiaddrs(addrs []ma.Multiaddr) []types.Multiaddr {
-	var result []types.Multiaddr
-	for _, addr := range addrs {
-		result = append(result, types.Multiaddr{Multiaddr: addr})
-	}
-	return result
 }
