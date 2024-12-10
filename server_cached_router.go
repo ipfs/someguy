@@ -71,18 +71,7 @@ func (r cachedRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (it
 
 	if err == routing.ErrNotFound {
 		// ErrNotFound will be returned if either dialing the peer failed or the peer was not found
-		r.cachedAddrBook.RecordFailedConnection(pid)
-		// If we didn't find the peer, try the cache
-		cachedAddrs := r.withAddrsFromCache(addrQueryOriginPeers, pid, nil)
-		if len(cachedAddrs) > 0 {
-			return iter.ToResultIter(iter.FromSlice([]*types.PeerRecord{
-				{
-					Schema: types.SchemaPeer,
-					ID:     &pid,
-					Addrs:  cachedAddrs,
-				},
-			})), nil
-		}
+		r.cachedAddrBook.RecordFailedConnection(pid) // record the failure used for probing/backoff purposes
 		return nil, routing.ErrNotFound
 	}
 
@@ -90,11 +79,9 @@ func (r cachedRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (it
 		return nil, err
 	}
 
-	// If the peer was found, there is likely no point in looking up the cache (because kad-dht will connect to it as part of FindPeers), but we'll do it just in case.
-	return iter.Map(it, func(record iter.Result[*types.PeerRecord]) iter.Result[*types.PeerRecord] {
-		record.Val.Addrs = r.withAddrsFromCache(addrQueryOriginPeers, *record.Val.ID, record.Val.Addrs)
-		return record
-	}), nil
+	// update the metrics to indicate that we didn't look up the cache for this lookup
+	peerAddrLookups.WithLabelValues(addrCacheStateUnused, addrQueryOriginPeers).Inc()
+	return it, nil
 }
 
 // withAddrsFromCache returns the best list of addrs for specified [peer.ID].
