@@ -88,7 +88,7 @@ func TestCachedRouter(t *testing.T) {
 		require.Equal(t, publicAddr.String(), peerRecord.Addrs[0].String())
 	})
 
-	t.Run("FindPeers with cache hit", func(t *testing.T) {
+	t.Run("Failed FindPeers with cached addresses does not return cached addresses", func(t *testing.T) {
 		ctx := context.Background()
 		pid := peer.ID("test-peer")
 
@@ -106,17 +106,8 @@ func TestCachedRouter(t *testing.T) {
 		// Create cached router
 		cr := NewCachedRouter(mr, cab)
 
-		it, err := cr.FindPeers(ctx, pid, 10)
-		require.NoError(t, err)
-
-		results, err := iter.ReadAllResults(it)
-		require.NoError(t, err)
-		require.Len(t, results, 1)
-
-		// Verify cached addresses were returned
-		require.Equal(t, pid, *results[0].ID)
-		require.Len(t, results[0].Addrs, 1)
-		require.Equal(t, publicAddr.String(), results[0].Addrs[0].String())
+		_, err = cr.FindPeers(ctx, pid, 10)
+		require.ErrorIs(t, err, routing.ErrNotFound)
 	})
 
 	t.Run("FindPeers with cache miss", func(t *testing.T) {
