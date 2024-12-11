@@ -257,7 +257,7 @@ func (cab *cachedAddrBook) GetCachedAddrs(p peer.ID) []types.Multiaddr {
 		return nil
 	}
 
-	result := make([]types.Multiaddr, 0, len(cachedAddrs))
+	result := make([]types.Multiaddr, 0, len(cachedAddrs)) // convert to local Multiaddr type 🙃
 	for _, addr := range cachedAddrs {
 		result = append(result, types.Multiaddr{Multiaddr: addr})
 	}
