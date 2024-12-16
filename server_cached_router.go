@@ -148,13 +148,8 @@ func (it *cacheFallbackIter) Next() bool {
 				// If a record has no addrs, we dispatch a lookup to find addresses
 				go it.dispatchFindPeer(*record)
 
-				return it.Next() // Recursively call Next() to either read from sourceIter or wait for lookup result
 			}
-
-			// If we're not going to probe, return the record with no addrs
-			// TODO: should we even return these if the peer is likely unreachable?
-			it.current = iter.Result[types.Record]{Val: record}
-			return true
+			return it.Next() // Recursively call Next() to either read from sourceIter or wait for lookup result
 		}
 
 		switch val.Val.GetSchema() {
