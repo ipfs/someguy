@@ -43,6 +43,8 @@ const (
 	addrQueryOriginProviders = "providers"
 	addrQueryOriginPeers     = "peers"
 	addrQueryOriginUnknown   = "unknown"
+
+	DispatchedFindPeersTimeout = time.Minute
 )
 
 // cachedRouter wraps a router with the cachedAddrBook to retrieve cached addresses for peers without multiaddrs in FindProviders
@@ -147,7 +149,6 @@ func (it *cacheFallbackIter) Next() bool {
 				it.ongoingLookups.Add(1) // important to increment before dispatchFindPeer
 				// If a record has no addrs, we dispatch a lookup to find addresses
 				go it.dispatchFindPeer(*record)
-
 			}
 			return it.Next() // Recursively call Next() to either read from sourceIter or wait for lookup result
 		}
@@ -193,8 +194,14 @@ func (it *cacheFallbackIter) Val() iter.Result[types.Record] {
 
 func (it *cacheFallbackIter) dispatchFindPeer(record types.PeerRecord) {
 	defer it.ongoingLookups.Add(-1)
-	// FindPeers is weird in that it accepts a limit. But we only want one result, ideally from the libp2p router.
-	peersIt, err := it.router.FindPeers(it.ctx, *record.ID, 1)
+
+	// Create a new context with a timeout that is independent of the main request context
+	// This is important because finishing (and determining whether this peer is reachable) the
+	// FindPeer will benefit other requests and keep the cache up to date.
+	ctx, cancel := context.WithTimeout(context.Background(), DispatchedFindPeersTimeout)
+	defer cancel()
+
+	peersIt, err := it.router.FindPeers(ctx, *record.ID, 1)
 
 	if err != nil {
 		it.findPeersResult <- record // pass back the record with no addrs
