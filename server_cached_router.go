@@ -123,7 +123,7 @@ type cacheFallbackIter struct {
 // It's a bit complex because it ensures we continue iterating without blocking on the FindPeers call.
 func NewCacheFallbackIter(sourceIter iter.ResultIter[types.Record], router cachedRouter, ctx context.Context) *cacheFallbackIter {
 	ctx, cancel := context.WithCancel(ctx)
-	return &cacheFallbackIter{
+	iter := &cacheFallbackIter{
 		sourceIter:      sourceIter,
 		router:          router,
 		ctx:             ctx,
@@ -131,6 +131,14 @@ func NewCacheFallbackIter(sourceIter iter.ResultIter[types.Record], router cache
 		findPeersResult: make(chan types.PeerRecord),
 		ongoingLookups:  atomic.Int32{},
 	}
+
+	// Add a goroutine to handle context cancellation
+	go func() {
+		<-ctx.Done()
+		iter.Close()
+	}()
+
+	return iter
 }
 
 func (it *cacheFallbackIter) Next() bool {
@@ -202,6 +210,11 @@ func (it *cacheFallbackIter) dispatchFindPeer(record types.PeerRecord) {
 	defer cancel()
 
 	peersIt, err := it.router.FindPeers(ctx, *record.ID, 1)
+
+	// Check if the parent context is done before sending
+	if it.ctx.Err() != nil {
+		return // Exit early if the parent context is done
+	}
 
 	if err != nil {
 		it.findPeersResult <- record // pass back the record with no addrs
