@@ -137,7 +137,7 @@ func (it *cacheFallbackIter) Next() bool {
 		val := it.sourceIter.Val()
 		handleRecord := func(id *peer.ID, record *types.PeerRecord) bool {
 			record.Addrs = it.router.withAddrsFromCache(addrQueryOriginProviders, *id, record.Addrs)
-			if record.Addrs != nil {
+			if len(record.Addrs) > 0 {
 				it.current = iter.Result[types.Record]{Val: record}
 				return true
 			}
@@ -175,7 +175,7 @@ func (it *cacheFallbackIter) Next() bool {
 			if !ok {
 				return false // channel closed. We're done
 			}
-			if result.Addrs != nil { // Only if the lookup returned a result and it has addrs
+			if len(result.Addrs) > 0 { // Only if the lookup returned a result and it has addrs
 				it.current = iter.Result[types.Record]{Val: &result}
 				return true
 			} else {

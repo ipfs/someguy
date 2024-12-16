@@ -147,7 +147,7 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 		case ev := <-sub.Out():
 			switch ev := ev.(type) {
 			case event.EvtPeerIdentificationCompleted:
-				pState, exists := cab.peerCache.Get(ev.Peer)
+				pState, exists := cab.peerCache.Peek(ev.Peer)
 				if !exists {
 					pState = peerState{}
 				}
@@ -267,11 +267,18 @@ func (cab *cachedAddrBook) GetCachedAddrs(p peer.ID) []types.Multiaddr {
 // Update the peer cache with information about a failed connection
 // This should be called when a connection attempt to a peer fails
 func (cab *cachedAddrBook) RecordFailedConnection(p peer.ID) {
-	pState, exists := cab.peerCache.Get(p)
+	pState, exists := cab.peerCache.Peek(p)
 	if !exists {
 		pState = peerState{}
 	}
-	pState.lastFailedConnTime = time.Now()
+	now := time.Now()
+	// once probing of offline peer reached MaxBackoffDuration and still failed,
+	// we opportunistically remove the dead peer from cache to save time on probing it further
+	if exists && pState.connectFailures > 1 && now.Sub(pState.lastFailedConnTime) > MaxBackoffDuration {
+	  cab.peerCache.Remove(p)
+	  return
+	}
+	pState.lastFailedConnTime = now
 	pState.connectFailures++
 	cab.peerCache.Add(p, pState)
 }
@@ -279,7 +286,7 @@ func (cab *cachedAddrBook) RecordFailedConnection(p peer.ID) {
 // Returns true if we should probe a peer (either by dialing known addresses or by dispatching a FindPeer)
 // based on the last failed connection time and connection failures
 func (cab *cachedAddrBook) ShouldProbePeer(p peer.ID) bool {
-	pState, exists := cab.peerCache.Get(p)
+	pState, exists := cab.peerCache.Peek(p)
 	if !exists {
 		return true // default to probing if the peer is not in the cache
 	}
