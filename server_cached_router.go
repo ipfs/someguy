@@ -63,7 +63,15 @@ func (r cachedRouter) FindProviders(ctx context.Context, key cid.Cid, limit int)
 		return nil, err
 	}
 
-	return NewCacheFallbackIter(it, r, ctx), nil
+	iter := NewCacheFallbackIter(it, r, ctx)
+
+	go func() {
+		// make sure we close the iterator when the parent context is done
+		<-ctx.Done()
+		iter.Close()
+	}()
+
+	return iter, nil
 }
 
 // FindPeers uses a simpler approach than FindProviders because we're dealing with a single PeerRecord, and there's
@@ -115,28 +123,19 @@ type cacheFallbackIter struct {
 	findPeersResult chan types.PeerRecord
 	router          cachedRouter
 	ctx             context.Context
-	cancel          context.CancelFunc
 	ongoingLookups  atomic.Int32
 }
 
 // NewCacheFallbackIter is a wrapper around a results iterator that will resolve peers with no addresses from cache and if no cached addresses, will look them up via FindPeers.
 // It's a bit complex because it ensures we continue iterating without blocking on the FindPeers call.
 func NewCacheFallbackIter(sourceIter iter.ResultIter[types.Record], router cachedRouter, ctx context.Context) *cacheFallbackIter {
-	ctx, cancel := context.WithCancel(ctx)
 	iter := &cacheFallbackIter{
 		sourceIter:      sourceIter,
 		router:          router,
 		ctx:             ctx,
-		cancel:          cancel,
 		findPeersResult: make(chan types.PeerRecord),
 		ongoingLookups:  atomic.Int32{},
 	}
-
-	// Add a goroutine to handle context cancellation
-	go func() {
-		<-ctx.Done()
-		iter.Close()
-	}()
 
 	return iter
 }
@@ -234,12 +233,10 @@ func (it *cacheFallbackIter) dispatchFindPeer(record types.PeerRecord) {
 }
 
 func (it *cacheFallbackIter) Close() error {
-	it.cancel()
-	go func() {
-		for it.ongoingLookups.Load() > 0 {
-			time.Sleep(time.Millisecond * 100)
-		}
-		close(it.findPeersResult)
-	}()
-	return it.sourceIter.Close()
+	for it.ongoingLookups.Load() > 0 {
+		time.Sleep(time.Millisecond * 100)
+	}
+
+	close(it.findPeersResult)
+	return nil
 }
