@@ -42,7 +42,7 @@ func main() {
 						Name:    "cached-addr-book",
 						Value:   true,
 						EnvVars: []string{"SOMEGUY_CACHED_ADDR_BOOK"},
-						Usage:   "use a cached address book to improve peer routing performance",
+						Usage:   "use a cached address book to improve provider lookup responses",
 					},
 					&cli.StringSliceFlag{
 						Name:    "provider-endpoints",
