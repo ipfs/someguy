@@ -96,10 +96,11 @@ func (r cachedRouter) withAddrsFromCache(queryOrigin string, pid peer.ID, addrs 
 		return addrs
 	}
 
-	cachedAddrs := r.cachedAddrBook.GetCachedAddrs(pid)
+	cachedAddrs := r.cachedAddrBook.GetCachedAddrs(pid) // Get cached addresses
+
 	if len(cachedAddrs) > 0 {
 		logger.Debugw("found cached addresses", "peer", pid, "cachedAddrs", cachedAddrs)
-		peerAddrLookups.WithLabelValues(addrCacheStateHit, queryOrigin).Inc()
+		peerAddrLookups.WithLabelValues(addrCacheStateHit, queryOrigin).Inc() // Cache hit
 		return cachedAddrs
 	} else {
 		peerAddrLookups.WithLabelValues(addrCacheStateMiss, queryOrigin).Inc() // Cache miss
