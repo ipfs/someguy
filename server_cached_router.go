@@ -64,13 +64,6 @@ func (r cachedRouter) FindProviders(ctx context.Context, key cid.Cid, limit int)
 	}
 
 	iter := NewCacheFallbackIter(it, r, ctx)
-
-	go func() {
-		// make sure we close the iterator when the parent context is done
-		<-ctx.Done()
-		iter.Close()
-	}()
-
 	return iter, nil
 }
 
@@ -199,6 +192,10 @@ func (it *cacheFallbackIter) Val() iter.Result[types.Record] {
 	return iter.Result[types.Record]{Err: errNoValueAvailable}
 }
 
+func (it *cacheFallbackIter) Close() error {
+	return it.sourceIter.Close()
+}
+
 func (it *cacheFallbackIter) dispatchFindPeer(record types.PeerRecord) {
 	defer it.ongoingLookups.Add(-1)
 
@@ -230,13 +227,4 @@ func (it *cacheFallbackIter) dispatchFindPeer(record types.PeerRecord) {
 	} else {
 		it.findPeersResult <- record // pass back the record with no addrs
 	}
-}
-
-func (it *cacheFallbackIter) Close() error {
-	for it.ongoingLookups.Load() > 0 {
-		time.Sleep(time.Millisecond * 100)
-	}
-
-	close(it.findPeersResult)
-	return nil
 }
