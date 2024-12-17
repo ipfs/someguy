@@ -102,8 +102,7 @@ func (r cachedRouter) withAddrsFromCache(queryOrigin string, pid peer.ID, addrs 
 		peerAddrLookups.WithLabelValues(addrCacheStateHit, queryOrigin).Inc()
 		return cachedAddrs
 	} else {
-		// Cache miss. Queue peer for lookup.
-		peerAddrLookups.WithLabelValues(addrCacheStateMiss, queryOrigin).Inc()
+		peerAddrLookups.WithLabelValues(addrCacheStateMiss, queryOrigin).Inc() // Cache miss
 		return nil
 	}
 }
