@@ -49,6 +49,12 @@ The TTL for recently connected peers' multiaddrs in the cached address book.
 
 Default: `48h`
 
+### `SOMEGUY_CACHED_ADDR_BOOK_ACTIVE_PROBING`
+
+Whether or not the Cached Address Book should actively probe peers in cache to keep their multiaddrs up to date.
+
+Default: `true`
+
 ### `SOMEGUY_PROVIDER_ENDPOINTS`
 
 Comma-separated list of other Delegated Routing V1 endpoints to proxy provider requests to.

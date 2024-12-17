@@ -40,10 +40,11 @@ func withRequestLogger(next http.Handler) http.Handler {
 }
 
 type config struct {
-	listenAddress           string
-	acceleratedDHTClient    bool
-	cachedAddrBook          bool
-	cachedAddrBookRecentTTL time.Duration
+	listenAddress               string
+	acceleratedDHTClient        bool
+	cachedAddrBook              bool
+	cachedAddrBookActiveProbing bool
+	cachedAddrBookRecentTTL     time.Duration
 
 	contentEndpoints []string
 	peerEndpoints    []string
@@ -85,12 +86,14 @@ func start(ctx context.Context, cfg *config) error {
 	var cachedAddrBook *cachedAddrBook
 
 	if cfg.cachedAddrBook {
-		fmt.Println("Using cached address book to speed up provider discovery")
+		fmt.Printf("Using cached address book to speed up provider discovery (active probing enabled: %t)\n", cfg.cachedAddrBookActiveProbing)
 		opts := []AddrBookOption{}
 
 		if cfg.cachedAddrBookRecentTTL > 0 {
 			opts = append(opts, WithRecentlyConnectedTTL(cfg.cachedAddrBookRecentTTL))
 		}
+
+		opts = append(opts, WithActiveProbing(cfg.cachedAddrBookActiveProbing))
 
 		cachedAddrBook, err = newCachedAddrBook(opts...)
 		if err != nil {

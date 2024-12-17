@@ -88,6 +88,7 @@ type peerState struct {
 type cachedAddrBook struct {
 	addrBook             peerstore.AddrBook             // memory address book
 	peerCache            *lru.Cache[peer.ID, peerState] // LRU cache with additional metadata about peer
+	probingEnabled       bool
 	isProbing            atomic.Bool
 	allowPrivateIPs      bool // for testing
 	recentlyConnectedTTL time.Duration
@@ -105,6 +106,13 @@ func WithAllowPrivateIPs() AddrBookOption {
 func WithRecentlyConnectedTTL(ttl time.Duration) AddrBookOption {
 	return func(cab *cachedAddrBook) error {
 		cab.recentlyConnectedTTL = ttl
+		return nil
+	}
+}
+
+func WithActiveProbing(enabled bool) AddrBookOption {
+	return func(cab *cachedAddrBook) error {
+		cab.probingEnabled = enabled
 		return nil
 	}
 }
@@ -127,7 +135,8 @@ func newCachedAddrBook(opts ...AddrBookOption) (*cachedAddrBook, error) {
 			return nil, err
 		}
 	}
-	logger.Infof("cachedAddrBook: Using TTL of %s for recently connected peers", cab.recentlyConnectedTTL)
+	logger.Infof("Using TTL of %s for recently connected peers", cab.recentlyConnectedTTL)
+	logger.Infof("Probing enabled: %t", cab.probingEnabled)
 	return cab, nil
 }
 
@@ -191,6 +200,10 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 				}
 			}
 		case <-probeTicker.C:
+			if !cab.probingEnabled {
+				logger.Debug("Probing disabled, skipping")
+				continue
+			}
 			if cab.isProbing.Load() {
 				logger.Debug("Skipping peer probe, still running")
 				continue
