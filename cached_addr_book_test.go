@@ -26,14 +26,13 @@ func TestCachedAddrBook(t *testing.T) {
 }
 
 func TestBackground(t *testing.T) {
-	t.Skip("skipping until this test is less flaky")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Create a real event bus
 	eventBus := eventbus.NewBus()
 
-	emitter, err := eventBus.Emitter(new(event.EvtPeerIdentificationCompleted))
+	emitter, err := eventBus.Emitter(new(event.EvtPeerIdentificationCompleted), eventbus.Stateful)
 	require.NoError(t, err)
 
 	// Use a mock host with a real event bus
@@ -70,7 +69,7 @@ func TestBackground(t *testing.T) {
 	require.Eventually(t, func() bool {
 		_, exists := cab.peerCache.Get(testPeer)
 		return exists
-	}, time.Second*5, time.Millisecond*100, "peer was not added to cache")
+	}, time.Second*3, time.Millisecond*100, "peer was not added to cache")
 
 	// Verify peer state
 	pState, exists := cab.peerCache.Get(testPeer)
