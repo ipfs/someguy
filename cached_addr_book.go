@@ -276,6 +276,8 @@ func (cab *cachedAddrBook) RecordFailedConnection(p peer.ID) {
 	// we opportunistically remove the dead peer from cache to save time on probing it further
 	if exists && pState.connectFailures > 1 && now.Sub(pState.lastFailedConnTime) > MaxBackoffDuration {
 		cab.peerCache.Remove(p)
+		// remove the peer from the addr book. Otherwise it will be probed again in the probe loop
+		cab.addrBook.ClearAddrs(p)
 		return
 	}
 	pState.lastFailedConnTime = now
