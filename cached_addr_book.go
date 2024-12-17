@@ -84,8 +84,8 @@ type peerState struct {
 }
 
 type cachedAddrBook struct {
-	addrBook        peerstore.AddrBook                     // memory address book
-	peerCache       *lru.TwoQueueCache[peer.ID, peerState] // LRU cache with additional metadata about peer
+	addrBook        peerstore.AddrBook             // memory address book
+	peerCache       *lru.Cache[peer.ID, peerState] // LRU cache with additional metadata about peer
 	isProbing       atomic.Bool
 	allowPrivateIPs bool // for testing
 }
@@ -100,7 +100,7 @@ func WithAllowPrivateIPs() AddrBookOption {
 }
 
 func newCachedAddrBook(opts ...AddrBookOption) (*cachedAddrBook, error) {
-	peerCache, err := lru.New2Q[peer.ID, peerState](PeerCacheSize)
+	peerCache, err := lru.New[peer.ID, peerState](PeerCacheSize)
 	if err != nil {
 		return nil, err
 	}
