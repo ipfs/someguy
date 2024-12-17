@@ -40,9 +40,10 @@ func withRequestLogger(next http.Handler) http.Handler {
 }
 
 type config struct {
-	listenAddress        string
-	acceleratedDHTClient bool
-	cachedAddrBook       bool
+	listenAddress           string
+	acceleratedDHTClient    bool
+	cachedAddrBook          bool
+	cachedAddrBookRecentTTL time.Duration
 
 	contentEndpoints []string
 	peerEndpoints    []string
@@ -85,7 +86,13 @@ func start(ctx context.Context, cfg *config) error {
 
 	if cfg.cachedAddrBook {
 		fmt.Println("Using cached address book to speed up provider discovery")
-		cachedAddrBook, err = newCachedAddrBook()
+		opts := []AddrBookOption{}
+
+		if cfg.cachedAddrBookRecentTTL > 0 {
+			opts = append(opts, WithRecentlyConnectedTTL(cfg.cachedAddrBookRecentTTL))
+		}
+
+		cachedAddrBook, err = newCachedAddrBook(opts...)
 		if err != nil {
 			return err
 		}

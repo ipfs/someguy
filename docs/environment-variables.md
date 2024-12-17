@@ -37,6 +37,18 @@ Whether or not the Accelerated DHT is enabled or not.
 
 Default: `true`
 
+### `SOMEGUY_CACHED_ADDR_BOOK`
+
+Whether or not the Cached Address Book is enabled or not.
+
+Default: `true`
+
+### `SOMEGUY_CACHED_ADDR_BOOK_RECENT_TTL`
+
+The TTL for recently connected peers' multiaddrs in the cached address book.
+
+Default: `48h`
+
 ### `SOMEGUY_PROVIDER_ENDPOINTS`
 
 Comma-separated list of other Delegated Routing V1 endpoints to proxy provider requests to.

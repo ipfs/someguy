@@ -25,8 +25,9 @@ import (
 
 const (
 	Subsystem = "cached_addr_book"
-	// The TTL to keep recently connected peers for. Same as [amino.DefaultProvideValidity] in go-libp2p-kad-dht
-	RecentlyConnectedAddrTTL = amino.DefaultProvideValidity
+
+	// The default TTL to keep recently connected peers' multiaddrs for
+	DefaultRecentlyConnectedAddrTTL = amino.DefaultProvideValidity
 
 	// Connected peers don't expire until they disconnect
 	ConnectedAddrTTL = peerstore.ConnectedAddrTTL
@@ -48,8 +49,9 @@ const (
 	// 1_000_000 is 10x the default number of signed peer records cached by the memory address book.
 	PeerCacheSize = 1_000_000
 
-	// Maximum backoff duration for probing a peer
-	MaxBackoffDuration = time.Hour * 48
+	// Maximum backoff duration for probing a peer. After this duration, we will stop
+	// trying to connect to the peer and remove it from the cache.
+	MaxBackoffDuration = amino.DefaultProvideValidity
 )
 
 var (
@@ -84,10 +86,11 @@ type peerState struct {
 }
 
 type cachedAddrBook struct {
-	addrBook        peerstore.AddrBook             // memory address book
-	peerCache       *lru.Cache[peer.ID, peerState] // LRU cache with additional metadata about peer
-	isProbing       atomic.Bool
-	allowPrivateIPs bool // for testing
+	addrBook             peerstore.AddrBook             // memory address book
+	peerCache            *lru.Cache[peer.ID, peerState] // LRU cache with additional metadata about peer
+	isProbing            atomic.Bool
+	allowPrivateIPs      bool // for testing
+	recentlyConnectedTTL time.Duration
 }
 
 type AddrBookOption func(*cachedAddrBook) error
@@ -99,6 +102,13 @@ func WithAllowPrivateIPs() AddrBookOption {
 	}
 }
 
+func WithRecentlyConnectedTTL(ttl time.Duration) AddrBookOption {
+	return func(cab *cachedAddrBook) error {
+		cab.recentlyConnectedTTL = ttl
+		return nil
+	}
+}
+
 func newCachedAddrBook(opts ...AddrBookOption) (*cachedAddrBook, error) {
 	peerCache, err := lru.New[peer.ID, peerState](PeerCacheSize)
 	if err != nil {
@@ -106,8 +116,9 @@ func newCachedAddrBook(opts ...AddrBookOption) (*cachedAddrBook, error) {
 	}
 
 	cab := &cachedAddrBook{
-		peerCache: peerCache,
-		addrBook:  pstoremem.NewAddrBook(),
+		peerCache:            peerCache,
+		addrBook:             pstoremem.NewAddrBook(),
+		recentlyConnectedTTL: DefaultRecentlyConnectedAddrTTL, // Set default value
 	}
 
 	for _, opt := range opts {
@@ -116,6 +127,7 @@ func newCachedAddrBook(opts ...AddrBookOption) (*cachedAddrBook, error) {
 			return nil, err
 		}
 	}
+	logger.Infof("cachedAddrBook: Using TTL of %s for recently connected peers", cab.recentlyConnectedTTL)
 	return cab, nil
 }
 
@@ -157,7 +169,7 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 				cab.peerCache.Add(ev.Peer, pState)
 				peerStateSize.Set(float64(cab.peerCache.Len())) // update metric
 
-				ttl := getTTL(host.Network().Connectedness(ev.Peer))
+				ttl := cab.getTTL(host.Network().Connectedness(ev.Peer))
 				if ev.SignedPeerRecord != nil {
 					logger.Debug("Caching signed peer record")
 					cab, ok := peerstore.GetCertifiedAddrBook(cab.addrBook)
@@ -175,7 +187,7 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 			case event.EvtPeerConnectednessChanged:
 				// If the peer is not connected or limited, we update the TTL
 				if !hasValidConnectedness(ev.Connectedness) {
-					cab.addrBook.UpdateAddrs(ev.Peer, ConnectedAddrTTL, RecentlyConnectedAddrTTL)
+					cab.addrBook.UpdateAddrs(ev.Peer, ConnectedAddrTTL, cab.recentlyConnectedTTL)
 				}
 			}
 		case <-probeTicker.C:
@@ -313,9 +325,9 @@ func hasValidConnectedness(connectedness network.Connectedness) bool {
 	return connectedness == network.Connected || connectedness == network.Limited
 }
 
-func getTTL(connectedness network.Connectedness) time.Duration {
+func (cab *cachedAddrBook) getTTL(connectedness network.Connectedness) time.Duration {
 	if hasValidConnectedness(connectedness) {
 		return ConnectedAddrTTL
 	}
-	return RecentlyConnectedAddrTTL
+	return cab.recentlyConnectedTTL
 }
