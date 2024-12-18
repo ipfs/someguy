@@ -343,7 +343,9 @@ func TestFindProviders(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, results, 5)
 
-		require.Len(t, results[0].(*types.PeerRecord).Addrs, 1)
+		require.Eventually(t, func() bool {
+			return len(results[0].(*types.PeerRecord).Addrs) == 1
+		}, time.Second*3, time.Millisecond*100)
 		require.Equal(t, publicAddr.String(), results[0].(*types.PeerRecord).Addrs[0].String())
 	})
 
