@@ -52,6 +52,10 @@ const (
 	// Maximum backoff duration for probing a peer. After this duration, we will stop
 	// trying to connect to the peer and remove it from the cache.
 	MaxBackoffDuration = amino.DefaultProvideValidity
+
+	probeResult        = "result"
+	probeResultOnline  = "online"
+	probeResultOffline = "offline"
 )
 
 var (
@@ -64,12 +68,14 @@ var (
 		Buckets: []float64{5, 10, 30, 60, 120, 300, 600, 900},
 	})
 
-	probedPeersCounter = promauto.NewCounter(prometheus.CounterOpts{
+	probedPeersCounter = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name:      "probed_peers",
 		Subsystem: Subsystem,
 		Namespace: name,
 		Help:      "Number of peers probed",
-	})
+	},
+		[]string{probeResult},
+	)
 
 	peerStateSize = promauto.NewGauge(prometheus.GaugeOpts{
 		Name:      "peer_state_size",
@@ -256,7 +262,6 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 				<-semaphore // Release semaphore
 				wg.Done()
 			}()
-			probedPeersCounter.Inc()
 			ctx, cancel := context.WithTimeout(ctx, ConnectTimeout)
 			defer cancel()
 			logger.Debugf("Probe %d: PeerID: %s, Addrs: %v", i+1, p, addrs)
@@ -268,6 +273,9 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 			if err != nil {
 				logger.Debugf("failed to connect to peer %s: %v", p, err)
 				cab.RecordFailedConnection(p)
+				probedPeersCounter.WithLabelValues(probeResultOffline).Inc()
+			} else {
+				probedPeersCounter.WithLabelValues(probeResultOnline).Inc()
 			}
 		}()
 	}
