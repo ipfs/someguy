@@ -15,6 +15,14 @@ The following emojis are used to highlight certain changes:
 
 ### Added
 
+- Peer addresses are cached for 48h to match [provider record expiration on Amino DHT](https://github.com/libp2p/go-libp2p-kad-dht/blob/v0.28.1/amino/defaults.go#L40-L43).
+- In the background, someguy probes cached peers at most once per hour (`PeerProbeThreshold`) by attempting to dial them to keep their multiaddrs up to date. If a peer is not reachable, an exponential backoff is applied to reduce the frequency of probing. If a cached peer is unreachable for more than 48h (`MaxBackoffDuration`), it is removed from the cache.
+- Someguy now augments providers missing addresses in `FindProviders` with cached addresses. If a peer is encountered with no cached addresses, `FindPeer` is dispatched in the background and the result is streamed in the reponse. Providers for which no addresses can be found, are omitted from the response.
+  - This can be enabled via `SOMEGUY_CACHED_ADDR_BOOK=true|false` (enabled by default)
+  - Two additional configuration options for the  `cachedAddrBook` implementation:
+    - `SOMEGUY_CACHED_ADDR_BOOK_ACTIVE_PROBING` whether to actively probe cached peers in the background to keep their multiaddrs up to date.
+    - `SOMEGUY_CACHED_ADDR_BOOK_RECENT_TTL` to adjust the TTL for cached addresses of recently connected peers.
+
 ### Changed
 
 ### Removed

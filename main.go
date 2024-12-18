@@ -38,6 +38,25 @@ func main() {
 						EnvVars: []string{"SOMEGUY_ACCELERATED_DHT"},
 						Usage:   "run the accelerated DHT client",
 					},
+					&cli.BoolFlag{
+						Name:    "cached-addr-book",
+						Value:   true,
+						EnvVars: []string{"SOMEGUY_CACHED_ADDR_BOOK"},
+						Usage:   "use a cached address book to improve provider lookup responses",
+					},
+					&cli.BoolFlag{
+						Name:    "cached-addr-book-active-probing",
+						Value:   true,
+						EnvVars: []string{"SOMEGUY_CACHED_ADDR_BOOK_ACTIVE_PROBING"},
+						Usage:   "actively probe peers in cache to keep their multiaddrs up to date",
+					},
+					&cli.DurationFlag{
+						Name:        "cached-addr-book-recent-ttl",
+						DefaultText: DefaultRecentlyConnectedAddrTTL.String(),
+						Value:       DefaultRecentlyConnectedAddrTTL,
+						EnvVars:     []string{"SOMEGUY_CACHED_ADDR_BOOK_RECENT_TTL"},
+						Usage:       "TTL for recently connected peers' multiaddrs in the cached address book",
+					},
 					&cli.StringSliceFlag{
 						Name:    "provider-endpoints",
 						Value:   cli.NewStringSlice(cidContactEndpoint),
@@ -115,8 +134,11 @@ func main() {
 				},
 				Action: func(ctx *cli.Context) error {
 					cfg := &config{
-						listenAddress:        ctx.String("listen-address"),
-						acceleratedDHTClient: ctx.Bool("accelerated-dht"),
+						listenAddress:               ctx.String("listen-address"),
+						acceleratedDHTClient:        ctx.Bool("accelerated-dht"),
+						cachedAddrBook:              ctx.Bool("cached-addr-book"),
+						cachedAddrBookActiveProbing: ctx.Bool("cached-addr-book-active-probing"),
+						cachedAddrBookRecentTTL:     ctx.Duration("cached-addr-book-recent-ttl"),
 
 						contentEndpoints: ctx.StringSlice("provider-endpoints"),
 						peerEndpoints:    ctx.StringSlice("peer-endpoints"),

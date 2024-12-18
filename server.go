@@ -40,8 +40,11 @@ func withRequestLogger(next http.Handler) http.Handler {
 }
 
 type config struct {
-	listenAddress        string
-	acceleratedDHTClient bool
+	listenAddress               string
+	acceleratedDHTClient        bool
+	cachedAddrBook              bool
+	cachedAddrBookActiveProbing bool
+	cachedAddrBookRecentTTL     time.Duration
 
 	contentEndpoints []string
 	peerEndpoints    []string
@@ -80,17 +83,36 @@ func start(ctx context.Context, cfg *config) error {
 		dhtRouting = standardDHT
 	}
 
-	crRouters, err := getCombinedRouting(cfg.contentEndpoints, dhtRouting)
+	var cachedAddrBook *cachedAddrBook
+
+	if cfg.cachedAddrBook {
+		fmt.Printf("Using cached address book to speed up provider discovery (active probing enabled: %t)\n", cfg.cachedAddrBookActiveProbing)
+		opts := []AddrBookOption{}
+
+		if cfg.cachedAddrBookRecentTTL > 0 {
+			opts = append(opts, WithRecentlyConnectedTTL(cfg.cachedAddrBookRecentTTL))
+		}
+
+		opts = append(opts, WithActiveProbing(cfg.cachedAddrBookActiveProbing))
+
+		cachedAddrBook, err = newCachedAddrBook(opts...)
+		if err != nil {
+			return err
+		}
+		go cachedAddrBook.background(ctx, h)
+	}
+
+	crRouters, err := getCombinedRouting(cfg.contentEndpoints, dhtRouting, cachedAddrBook)
 	if err != nil {
 		return err
 	}
 
-	prRouters, err := getCombinedRouting(cfg.peerEndpoints, dhtRouting)
+	prRouters, err := getCombinedRouting(cfg.peerEndpoints, dhtRouting, cachedAddrBook)
 	if err != nil {
 		return err
 	}
 
-	ipnsRouters, err := getCombinedRouting(cfg.ipnsEndpoints, dhtRouting)
+	ipnsRouters, err := getCombinedRouting(cfg.ipnsEndpoints, dhtRouting, cachedAddrBook)
 	if err != nil {
 		return err
 	}
@@ -109,11 +131,15 @@ func start(ctx context.Context, cfg *config) error {
 		_ = tp.Shutdown(ctx)
 	}()
 
+	handlerOpts := []server.Option{
+		server.WithPrometheusRegistry(prometheus.DefaultRegisterer),
+	}
+
 	handler := server.Handler(&composableRouter{
 		providers: crRouters,
 		peers:     prRouters,
 		ipns:      ipnsRouters,
-	}, server.WithPrometheusRegistry(prometheus.DefaultRegisterer))
+	}, handlerOpts...)
 
 	// Add CORS.
 	handler = cors.New(cors.Options{
@@ -216,12 +242,20 @@ func newHost(cfg *config) (host.Host, error) {
 	return h, nil
 }
 
-func getCombinedRouting(endpoints []string, dht routing.Routing) (router, error) {
-	if len(endpoints) == 0 {
-		return sanitizeRouter{libp2pRouter{routing: dht}}, nil
+func getCombinedRouting(endpoints []string, dht routing.Routing, cachedAddrBook *cachedAddrBook) (router, error) {
+	var dhtRouter router
+
+	if cachedAddrBook != nil {
+		dhtRouter = NewCachedRouter(sanitizeRouter{libp2pRouter{routing: dht}}, cachedAddrBook)
+	} else {
+		dhtRouter = sanitizeRouter{libp2pRouter{routing: dht}}
 	}
 
-	var routers []router
+	if len(endpoints) == 0 {
+		return dhtRouter, nil
+	}
+
+	var delegatedRouters []router
 
 	for _, endpoint := range endpoints {
 		drclient, err := drclient.New(endpoint,
@@ -233,12 +267,12 @@ func getCombinedRouting(endpoints []string, dht routing.Routing) (router, error)
 		if err != nil {
 			return nil, err
 		}
-		routers = append(routers, clientRouter{Client: drclient})
+		delegatedRouters = append(delegatedRouters, clientRouter{Client: drclient})
 	}
 
-	return sanitizeRouter{parallelRouter{
-		routers: append(routers, libp2pRouter{routing: dht}),
-	}}, nil
+	return parallelRouter{
+		routers: append(delegatedRouters, dhtRouter),
+	}, nil
 }
 
 func withTracingAndDebug(next http.Handler, authToken string) http.Handler {
