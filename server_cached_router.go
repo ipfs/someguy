@@ -48,6 +48,7 @@ const (
 )
 
 // cachedRouter wraps a router with the cachedAddrBook to retrieve cached addresses for peers without multiaddrs in FindProviders
+// it will also dispatch a FindPeer when a provider has no multiaddrs using the cacheFallbackIter
 type cachedRouter struct {
 	router
 	cachedAddrBook *cachedAddrBook
