@@ -224,7 +224,6 @@ func (it *cacheFallbackIter) dispatchFindPeer(record types.PeerRecord) {
 	}
 	if len(peers) > 0 {
 		// If we found the peer, pass back the result
-		peers[0].Addrs = filterPrivateMultiaddr(peers[0].Addrs) // filter out private addresses
 		it.findPeersResult <- *peers[0]
 	} else {
 		it.findPeersResult <- record // pass back the record with no addrs
