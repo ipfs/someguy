@@ -15,12 +15,13 @@ The following emojis are used to highlight certain changes:
 
 ### Added
 
-
 ### Changed
 
 ### Removed
 
 ### Fixed
+
+- Fix a bug whereby, cached peers with private multiaddrs were returned in `/routing/v1/providers` responses, as they were not passing through `sanitizeRouter`.
 
 ### Security
 
