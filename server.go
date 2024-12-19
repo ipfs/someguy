@@ -246,7 +246,8 @@ func getCombinedRouting(endpoints []string, dht routing.Routing, cachedAddrBook 
 	var dhtRouter router
 
 	if cachedAddrBook != nil {
-		dhtRouter = NewCachedRouter(sanitizeRouter{libp2pRouter{routing: dht}}, cachedAddrBook)
+		cachedRouter := NewCachedRouter(libp2pRouter{routing: dht}, cachedAddrBook)
+		dhtRouter = sanitizeRouter{cachedRouter}
 	} else {
 		dhtRouter = sanitizeRouter{libp2pRouter{routing: dht}}
 	}
