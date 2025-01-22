@@ -144,7 +144,7 @@ func start(ctx context.Context, cfg *config) error {
 	// Add CORS.
 	handler = cors.New(cors.Options{
 		AllowedOrigins: []string{"*"},
-		AllowedMethods: []string{http.MethodGet, http.MethodOptions},
+		AllowedMethods: []string{http.MethodGet, http.MethodOptions, http.MethodPut},
 		MaxAge:         600,
 	}).Handler(handler)
 
