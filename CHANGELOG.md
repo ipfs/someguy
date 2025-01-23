@@ -15,6 +15,8 @@ The following emojis are used to highlight certain changes:
 
 ### Added
 
+- Enabled CORS for PUT requests to `/routing/v1/ipns`.
+
 ### Changed
 
 ### Removed
