@@ -15,17 +15,25 @@ The following emojis are used to highlight certain changes:
 
 ### Added
 
-- Enabled CORS for PUT requests to `/routing/v1/ipns`.
-
 ### Changed
 
 ### Removed
 
 ### Fixed
 
-- Fix a bug whereby, cached peers with private multiaddrs were returned in `/routing/v1/providers` responses, as they were not passing through `sanitizeRouter`.
-
 ### Security
+
+## [v0.8.0]
+
+### Added
+
+- Enabled CORS for PUT requests to `/routing/v1/ipns`.
+
+## [v0.7.1]
+
+### Fixed
+
+- Fix a bug whereby, cached peers with private multiaddrs were returned in `/routing/v1/providers` responses, as they were not passing through `sanitizeRouter`.
 
 ## [v0.7.0]
 
