@@ -2,8 +2,6 @@ module github.com/ipfs/someguy
 
 go 1.23.0
 
-toolchain go1.23.3
-
 require (
 	github.com/CAFxX/httpcompression v0.0.9
 	github.com/coreos/go-systemd/v22 v22.5.0
