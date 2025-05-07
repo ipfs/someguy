@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/libp2p/go-libp2p/core/peer"
 	"log"
 	"net"
 	"net/http"
@@ -13,6 +12,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/CAFxX/httpcompression"
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
@@ -119,13 +120,8 @@ func start(ctx context.Context, cfg *config) error {
 			if err != nil {
 				return fmt.Errorf("invalid peer ID %s: %w", cfg.blockProviderPeerIDs[i], err)
 			}
-			r, err := newHTTPBlockProvider(endpoint, p, &http.Client{
-				Transport: &drclient.ResponseBodyLimitedTransport{
-					RoundTripper: http.DefaultTransport,
-					LimitBytes:   1 << 20,
-					UserAgent:    "someguy/" + buildVersion(),
-				},
-			})
+
+			r, err := newHTTPBlockProvider(endpoint, p, nil)
 			if err != nil {
 				return err
 			}

@@ -9,13 +9,17 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
+	drclient "github.com/ipfs/boxo/routing/http/client"
 	"github.com/ipfs/boxo/routing/http/types"
 	"github.com/ipfs/boxo/routing/http/types/iter"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 )
+
+const httpBlockProviderTimeout = 5 * time.Second
 
 type httpBlockProvider struct {
 	endpoint   string
@@ -25,6 +29,9 @@ type httpBlockProvider struct {
 }
 
 func newHTTPBlockProvider(endpoint string, p peer.ID, client *http.Client) (httpBlockProvider, error) {
+	if client == nil {
+		client = defaultHTTPBlockProviderClient()
+	}
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		return httpBlockProvider{}, fmt.Errorf("failed to parse endpoint %s: %w", endpoint, err)
@@ -89,6 +96,17 @@ func newHTTPBlockProvider(endpoint string, p peer.ID, client *http.Client) (http
 	}, nil
 }
 
+func defaultHTTPBlockProviderClient() *http.Client {
+	return &http.Client{
+		Timeout: httpBlockProviderTimeout, // timeout hanging HTTP HEAD sooner than boxo/routing/http/server.DefaultRoutingTimeout
+		Transport: &drclient.ResponseBodyLimitedTransport{
+			RoundTripper: http.DefaultTransport,
+			LimitBytes:   1 << 12, // max 4KiB -- should be plenty for HEAD response
+			UserAgent:    "someguy/" + buildVersion(),
+		},
+	}
+}
+
 func (h httpBlockProvider) FindProviders(ctx context.Context, c cid.Cid, limit int) (iter.ResultIter[types.Record], error) {
 	req, err := http.NewRequestWithContext(ctx, "HEAD", fmt.Sprintf("%s/ipfs/%s?format=raw", h.endpoint, c), nil)
 	if err != nil {
@@ -101,10 +119,7 @@ func (h httpBlockProvider) FindProviders(ctx context.Context, c cid.Cid, limit i
 	}
 
 	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode == http.StatusOK {
+	if err == nil && resp.StatusCode == http.StatusOK {
 		return iter.ToResultIter(iter.FromSlice([]types.Record{
 			&types.PeerRecord{
 				Schema: types.SchemaPeer,
@@ -117,6 +132,7 @@ func (h httpBlockProvider) FindProviders(ctx context.Context, c cid.Cid, limit i
 			},
 		})), nil
 	}
+	// everything that is not HTTP 200, including errors, produces empty response
 	return iter.ToResultIter(iter.FromSlice([]types.Record{})), nil
 }
 
