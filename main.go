@@ -32,11 +32,11 @@ func main() {
 						EnvVars: []string{"SOMEGUY_LISTEN_ADDRESS"},
 						Usage:   "listen address",
 					},
-					&cli.BoolFlag{
-						Name:    "accelerated-dht",
-						Value:   true,
-						EnvVars: []string{"SOMEGUY_ACCELERATED_DHT"},
-						Usage:   "run the accelerated DHT client",
+					&cli.StringFlag{
+						Name:    "dht",
+						Value:   "accelerated",
+						EnvVars: []string{"SOMEGUY_DHT"},
+						Usage:   "mode with which to run the Amino DHT client. Options are 'accelerated' or 'standard' or 'disabled'.",
 					},
 					&cli.BoolFlag{
 						Name:    "cached-addr-book",
@@ -147,7 +147,7 @@ func main() {
 				Action: func(ctx *cli.Context) error {
 					cfg := &config{
 						listenAddress:               ctx.String("listen-address"),
-						acceleratedDHTClient:        ctx.Bool("accelerated-dht"),
+						dhtType:                     ctx.String("dht"),
 						cachedAddrBook:              ctx.Bool("cached-addr-book"),
 						cachedAddrBookActiveProbing: ctx.Bool("cached-addr-book-active-probing"),
 						cachedAddrBookRecentTTL:     ctx.Duration("cached-addr-book-recent-ttl"),
@@ -171,7 +171,7 @@ func main() {
 
 					fmt.Printf("Starting %s %s\n", name, version)
 
-					fmt.Printf("SOMEGUY_ACCELERATED_DHT = %t\n", cfg.acceleratedDHTClient)
+					fmt.Printf("SOMEGUY_DHT = %s\n", cfg.dhtType)
 					printIfListConfigured("SOMEGUY_PROVIDER_ENDPOINTS = ", cfg.contentEndpoints)
 					printIfListConfigured("SOMEGUY_PEER_ENDPOINTS = ", cfg.peerEndpoints)
 					printIfListConfigured("SOMEGUY_IPNS_ENDPOINTS = ", cfg.ipnsEndpoints)

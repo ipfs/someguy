@@ -19,6 +19,8 @@ The following emojis are used to highlight certain changes:
 
 ### Changed
 
+- `accelerated-dht` option was removed and replaced with a `dht` option which enables toggling between the standard client, accelerated client and being disabled
+
 ### Removed
 
 ### Fixed

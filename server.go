@@ -42,7 +42,7 @@ func withRequestLogger(next http.Handler) http.Handler {
 
 type config struct {
 	listenAddress               string
-	acceleratedDHTClient        bool
+	dhtType                     string
 	cachedAddrBook              bool
 	cachedAddrBookActiveProbing bool
 	cachedAddrBookRecentTTL     time.Duration
@@ -72,23 +72,27 @@ func start(ctx context.Context, cfg *config) error {
 
 	fmt.Printf("Someguy libp2p host listening on %v\n", h.Addrs())
 	var dhtRouting routing.Routing
-	if cfg.acceleratedDHTClient {
+	switch cfg.dhtType {
+	case "accelerated":
 		wrappedDHT, err := newBundledDHT(ctx, h)
 		if err != nil {
 			return err
 		}
 		dhtRouting = wrappedDHT
-	} else {
+	case "standard":
 		standardDHT, err := dht.New(ctx, h, dht.Mode(dht.ModeClient), dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...))
 		if err != nil {
 			return err
 		}
 		dhtRouting = standardDHT
+	case "disabled":
+	default:
+		return fmt.Errorf("invalid dht type %s, must be one of [accelerated, standard, disabled]", cfg.dhtType)
 	}
 
 	var cachedAddrBook *cachedAddrBook
 
-	if cfg.cachedAddrBook {
+	if cfg.cachedAddrBook && dhtRouting != nil {
 		fmt.Printf("Using cached address book to speed up provider discovery (active probing enabled: %t)\n", cfg.cachedAddrBookActiveProbing)
 		opts := []AddrBookOption{}
 
@@ -275,11 +279,14 @@ func getCombinedRouting(endpoints []string, dht routing.Routing, cachedAddrBook 
 	if cachedAddrBook != nil {
 		cachedRouter := NewCachedRouter(libp2pRouter{routing: dht}, cachedAddrBook)
 		dhtRouter = sanitizeRouter{cachedRouter}
-	} else {
+	} else if dht != nil {
 		dhtRouter = sanitizeRouter{libp2pRouter{routing: dht}}
 	}
 
 	if len(endpoints) == 0 && len(additionalRouters) == 0 {
+		if dhtRouter == nil {
+			return composableRouter{}, nil
+		}
 		return dhtRouter, nil
 	}
 
@@ -298,8 +305,15 @@ func getCombinedRouting(endpoints []string, dht routing.Routing, cachedAddrBook 
 		delegatedRouters = append(delegatedRouters, clientRouter{Client: drclient})
 	}
 
+	var routers []router
+	routers = append(routers, delegatedRouters...)
+	if dhtRouter != nil {
+		routers = append(routers, dhtRouter)
+	}
+	routers = append(routers, additionalRouters...)
+
 	return parallelRouter{
-		routers: append(append(delegatedRouters, dhtRouter), additionalRouters...),
+		routers: routers,
 	}, nil
 }
 
