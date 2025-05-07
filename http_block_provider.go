@@ -62,7 +62,7 @@ func newHTTPBlockProvider(endpoint string, p peer.ID, client *http.Client) (http
 	if u.Scheme == "https" {
 		tlsComponent = "/tls"
 	} else {
-		tlsComponent = ""
+		return httpBlockProvider{}, fmt.Errorf("failed to parse endpoint %s: only HTTPS providers are allowed (unencrypted HTTP can't be used in web browsers)", endpoint)
 	}
 
 	var httpPathComponent string
