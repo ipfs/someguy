@@ -67,7 +67,7 @@ func newHTTPBlockProvider(endpoint string, p peer.ID, client *http.Client) (http
 
 	var httpPathComponent string
 	if escPath := u.EscapedPath(); escPath != "" && escPath != "/" {
-		httpPathComponent = "/http-path" + escPath
+		return httpBlockProvider{}, fmt.Errorf("failed to parse endpoint %s: only URLs without path are supported", endpoint)
 	}
 
 	endpointMaStr := fmt.Sprintf("/%s/%s/tcp/%d%s/http%s", hostComponent, h, port, tlsComponent, httpPathComponent)
