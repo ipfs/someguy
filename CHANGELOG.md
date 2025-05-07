@@ -15,6 +15,8 @@ The following emojis are used to highlight certain changes:
 
 ### Added
 
+- Added `http-block-provider-endpoints` and `http-block-provider-peerids` options to allow using a trustless gateway block provider as a content routing record source
+
 ### Changed
 
 ### Removed
