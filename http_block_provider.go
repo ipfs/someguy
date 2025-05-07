@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 
@@ -61,8 +62,12 @@ func newHTTPBlockProvider(endpoint string, p peer.ID, client *http.Client) (http
 	var tlsComponent string
 	if u.Scheme == "https" {
 		tlsComponent = "/tls"
+	} else if os.Getenv("DEBUG") == "true" {
+		// allow unencrypted HTTP for local debugging
+		tlsComponent = ""
 	} else {
 		return httpBlockProvider{}, fmt.Errorf("failed to parse endpoint %s: only HTTPS providers are allowed (unencrypted HTTP can't be used in web browsers)", endpoint)
+
 	}
 
 	var httpPathComponent string
@@ -89,7 +94,7 @@ func (h httpBlockProvider) FindProviders(ctx context.Context, c cid.Cid, limit i
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/vnd.ipld.raw")
+	req.Header.Set("Accept", "application/vnd.ipld.raw")
 	httpClient := h.httpClient
 	if httpClient == nil {
 		httpClient = http.DefaultClient
