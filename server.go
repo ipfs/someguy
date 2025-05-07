@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"log"
 	"net"
 	"net/http"
@@ -46,9 +47,11 @@ type config struct {
 	cachedAddrBookActiveProbing bool
 	cachedAddrBookRecentTTL     time.Duration
 
-	contentEndpoints []string
-	peerEndpoints    []string
-	ipnsEndpoints    []string
+	contentEndpoints       []string
+	peerEndpoints          []string
+	ipnsEndpoints          []string
+	blockProviderEndpoints []string
+	blockProviderPeerIDs   []string
 
 	libp2pListenAddress []string
 	connMgrLow          int
@@ -102,17 +105,41 @@ func start(ctx context.Context, cfg *config) error {
 		go cachedAddrBook.background(ctx, h)
 	}
 
-	crRouters, err := getCombinedRouting(cfg.contentEndpoints, dhtRouting, cachedAddrBook)
+	var blockProviderRouters []router
+	if len(cfg.blockProviderEndpoints) > 0 {
+		if len(cfg.blockProviderPeerIDs) != len(cfg.blockProviderEndpoints) {
+			return fmt.Errorf("number of block provider peer IDs must match number of endpoints")
+		}
+		for i, endpoint := range cfg.blockProviderEndpoints {
+			p, err := peer.Decode(cfg.blockProviderPeerIDs[i])
+			if err != nil {
+				return fmt.Errorf("invalid peer ID %s: %w", cfg.blockProviderPeerIDs[i], err)
+			}
+			r, err := newHTTPBlockProvider(endpoint, p, &http.Client{
+				Transport: &drclient.ResponseBodyLimitedTransport{
+					RoundTripper: http.DefaultTransport,
+					LimitBytes:   1 << 20,
+					UserAgent:    "someguy/" + buildVersion(),
+				},
+			})
+			if err != nil {
+				return err
+			}
+			blockProviderRouters = append(blockProviderRouters, composableRouter{providers: r})
+		}
+	}
+
+	crRouters, err := getCombinedRouting(cfg.contentEndpoints, dhtRouting, cachedAddrBook, blockProviderRouters)
 	if err != nil {
 		return err
 	}
 
-	prRouters, err := getCombinedRouting(cfg.peerEndpoints, dhtRouting, cachedAddrBook)
+	prRouters, err := getCombinedRouting(cfg.peerEndpoints, dhtRouting, cachedAddrBook, nil)
 	if err != nil {
 		return err
 	}
 
-	ipnsRouters, err := getCombinedRouting(cfg.ipnsEndpoints, dhtRouting, cachedAddrBook)
+	ipnsRouters, err := getCombinedRouting(cfg.ipnsEndpoints, dhtRouting, cachedAddrBook, nil)
 	if err != nil {
 		return err
 	}
@@ -242,7 +269,7 @@ func newHost(cfg *config) (host.Host, error) {
 	return h, nil
 }
 
-func getCombinedRouting(endpoints []string, dht routing.Routing, cachedAddrBook *cachedAddrBook) (router, error) {
+func getCombinedRouting(endpoints []string, dht routing.Routing, cachedAddrBook *cachedAddrBook, additionalRouters []router) (router, error) {
 	var dhtRouter router
 
 	if cachedAddrBook != nil {
@@ -252,7 +279,7 @@ func getCombinedRouting(endpoints []string, dht routing.Routing, cachedAddrBook 
 		dhtRouter = sanitizeRouter{libp2pRouter{routing: dht}}
 	}
 
-	if len(endpoints) == 0 {
+	if len(endpoints) == 0 && len(additionalRouters) == 0 {
 		return dhtRouter, nil
 	}
 
@@ -272,7 +299,7 @@ func getCombinedRouting(endpoints []string, dht routing.Routing, cachedAddrBook 
 	}
 
 	return parallelRouter{
-		routers: append(delegatedRouters, dhtRouter),
+		routers: append(append(delegatedRouters, dhtRouter), additionalRouters...),
 	}, nil
 }
 

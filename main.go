@@ -64,6 +64,18 @@ func main() {
 						Usage:   "other Delegated Routing V1 endpoints to proxy provider requests to",
 					},
 					&cli.StringSliceFlag{
+						Name:    "http-block-provider-endpoints",
+						Value:   nil,
+						EnvVars: []string{"SOMEGUY_HTTP_BLOCK_PROVIDER_ENDPOINTS"},
+						Usage:   "list of HTTP trustless gateway endpoints to proxy provider requests to",
+					},
+					&cli.StringSliceFlag{
+						Name:    "http-block-provider-peerids",
+						Value:   nil,
+						EnvVars: []string{"SOMEGUY_HTTP_BLOCK_PROVIDER_PEERIDS"},
+						Usage:   "list of peerIDs for the HTTP trustless gateway endpoints to proxy provider requests to",
+					},
+					&cli.StringSliceFlag{
 						Name:    "peer-endpoints",
 						Value:   cli.NewStringSlice(),
 						EnvVars: []string{"SOMEGUY_PEER_ENDPOINTS"},
@@ -140,9 +152,11 @@ func main() {
 						cachedAddrBookActiveProbing: ctx.Bool("cached-addr-book-active-probing"),
 						cachedAddrBookRecentTTL:     ctx.Duration("cached-addr-book-recent-ttl"),
 
-						contentEndpoints: ctx.StringSlice("provider-endpoints"),
-						peerEndpoints:    ctx.StringSlice("peer-endpoints"),
-						ipnsEndpoints:    ctx.StringSlice("ipns-endpoints"),
+						contentEndpoints:       ctx.StringSlice("provider-endpoints"),
+						peerEndpoints:          ctx.StringSlice("peer-endpoints"),
+						ipnsEndpoints:          ctx.StringSlice("ipns-endpoints"),
+						blockProviderEndpoints: ctx.StringSlice("http-block-provider-endpoints"),
+						blockProviderPeerIDs:   ctx.StringSlice("http-block-provider-peerids"),
 
 						libp2pListenAddress: ctx.StringSlice("libp2p-listen-addrs"),
 						connMgrLow:          ctx.Int("libp2p-connmgr-low"),
@@ -161,6 +175,8 @@ func main() {
 					printIfListConfigured("SOMEGUY_PROVIDER_ENDPOINTS = ", cfg.contentEndpoints)
 					printIfListConfigured("SOMEGUY_PEER_ENDPOINTS = ", cfg.peerEndpoints)
 					printIfListConfigured("SOMEGUY_IPNS_ENDPOINTS = ", cfg.ipnsEndpoints)
+					printIfListConfigured("SOMEGUY_HTTP_BLOCK_PROVIDER_ENDPOINTS = ", cfg.blockProviderEndpoints)
+					printIfListConfigured("SOMEGUY_HTTP_BLOCK_PROVIDER_PEERIDS = ", cfg.blockProviderPeerIDs)
 
 					return start(ctx.Context, cfg)
 				},
