@@ -121,7 +121,7 @@ func start(ctx context.Context, cfg *config) error {
 				return fmt.Errorf("invalid peer ID %s: %w", cfg.blockProviderPeerIDs[i], err)
 			}
 
-			r, err := newHTTPBlockProvider(endpoint, p, nil)
+			r, err := newHTTPBlockRouter(endpoint, p, nil)
 			if err != nil {
 				return err
 			}
