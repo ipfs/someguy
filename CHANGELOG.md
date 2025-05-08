@@ -15,6 +15,18 @@ The following emojis are used to highlight certain changes:
 
 ### Added
 
+### Changed
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [v0.9.0]
+
+### Added
+
 - Added `http-block-provider-endpoints` and `http-block-provider-peerids` options to enable using a [trustless HTTP gateway](https://specs.ipfs.tech/http-gateways/trustless-gateway/) as a source for synthetic content routing records.
   - When the configured gateway responds with HTTP 200 to an HTTP HEAD request for a block (`HEAD /ipfs/{cid}?format=raw`), `FindProviders` returns a provider record containing a predefined PeerID and the HTTP gateway as a multiaddr with `/tls/http` suffix.
 
