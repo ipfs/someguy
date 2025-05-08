@@ -21,6 +21,9 @@ The following emojis are used to highlight certain changes:
 ### Changed
 
 - `accelerated-dht` option was removed and replaced with a `dht` option which enables toggling between the standard client, accelerated client and being disabled
+- [boxo v0.30.0](https://github.com/ipfs/boxo/releases/tag/v0.30.0)
+- [go-libp2p v0.41.1](https://github.com/libp2p/go-libp2p/releases/tag/v0.41.1)
+- [go-libp2p-kad-dht v0.32.0](https://github.com/libp2p/go-libp2p-kad-dht/releases/tag/v0.32.0)
 
 ### Removed
 
