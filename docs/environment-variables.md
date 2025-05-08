@@ -4,10 +4,15 @@
 
 - [Configuration](#configuration)
   - [`SOMEGUY_LISTEN_ADDRESS`](#someguy_listen_address)
-  - [`SOMEGUY_ACCELERATED_DHT`](#someguy_accelerated_dht)
+  - [`SOMEGUY_DHT`](#someguy_dht)
+  - [`SOMEGUY_CACHED_ADDR_BOOK`](#someguy_cached_addr_book)
+  - [`SOMEGUY_CACHED_ADDR_BOOK_RECENT_TTL`](#someguy_cached_addr_book_recent_ttl)
+  - [`SOMEGUY_CACHED_ADDR_BOOK_ACTIVE_PROBING`](#someguy_cached_addr_book_active_probing)
   - [`SOMEGUY_PROVIDER_ENDPOINTS`](#someguy_provider_endpoints)
   - [`SOMEGUY_PEER_ENDPOINTS`](#someguy_peer_endpoints)
   - [`SOMEGUY_IPNS_ENDPOINTS`](#someguy_ipns_endpoints)
+  - [`SOMEGUY_HTTP_BLOCK_PROVIDER_ENDPOINTS`](#someguy_http_block_provider_endpoints)
+  - [`SOMEGUY_HTTP_BLOCK_PROVIDER_PEERIDS`](#someguy_http_block_provider_peerids)
   - [`SOMEGUY_LIBP2P_LISTEN_ADDRS`](#someguy_libp2p_listen_addrs)
   - [`SOMEGUY_LIBP2P_CONNMGR_LOW`](#someguy_libp2p_connmgr_low)
   - [`SOMEGUY_LIBP2P_CONNMGR_HIGH`](#someguy_libp2p_connmgr_high)
@@ -20,8 +25,8 @@
   - [`GOLOG_FILE`](#golog_file)
   - [`GOLOG_TRACING_FILE`](#golog_tracing_file)
 - [Tracing](#tracing)
-  - [`SOMEGUY_SAMPLING_FRACTION`](#someguy_sampling_fraction)
   - [`SOMEGUY_TRACING_AUTH`](#someguy_tracing_auth)
+  - [`SOMEGUY_SAMPLING_FRACTION`](#someguy_sampling_fraction)
 
 ## Configuration
 
@@ -31,11 +36,11 @@ The address to listen on.
 
 Default: `127.0.0.1:8190`
 
-### `SOMEGUY_ACCELERATED_DHT`
+### `SOMEGUY_DHT`
 
-Whether or not the Accelerated DHT is enabled or not.
+Controls DHT client mode: `standard`, `accelerated`, `disabled`
 
-Default: `true`
+Default: `accelerated`
 
 ### `SOMEGUY_CACHED_ADDR_BOOK`
 
@@ -70,6 +75,20 @@ Default: none
 ### `SOMEGUY_IPNS_ENDPOINTS`
 
 Comma-separated list of other Delegated Routing V1 endpoints to proxy IPNS requests to.
+
+Default: none
+
+### `SOMEGUY_HTTP_BLOCK_PROVIDER_ENDPOINTS`
+
+Comma-separated list of [HTTP trustless gateway](https://specs.ipfs.tech/http-gateways/trustless-gateway/) for probing and generating synthetic provider records.
+
+When the configured gateway responds with HTTP 200 to an HTTP HEAD request for a block (`HEAD /ipfs/{cid}?format=raw`), `FindProviders` returns a provider record containing a PeerID from `SOMEGUY_HTTP_BLOCK_PROVIDER_PEERIDS` and the HTTP gateway endpoint as a multiaddr with `/tls/http` suffix.
+
+Default: none
+
+### `SOMEGUY_HTTP_BLOCK_PROVIDER_PEERIDS`
+
+Comma-separated list of [multibase-encoded peerIDs](https://github.com/libp2p/specs/blob/master/peer-ids/peer-ids.md#string-representation) to use in synthetic provider records returned for HTTP providers in `SOMEGUY_HTTP_BLOCK_PROVIDER_ENDPOINTS`.
 
 Default: none
 
