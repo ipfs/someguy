@@ -32,11 +32,11 @@ func main() {
 						EnvVars: []string{"SOMEGUY_LISTEN_ADDRESS"},
 						Usage:   "listen address",
 					},
-					&cli.BoolFlag{
-						Name:    "accelerated-dht",
-						Value:   true,
-						EnvVars: []string{"SOMEGUY_ACCELERATED_DHT"},
-						Usage:   "run the accelerated DHT client",
+					&cli.StringFlag{
+						Name:    "dht",
+						Value:   "accelerated",
+						EnvVars: []string{"SOMEGUY_DHT"},
+						Usage:   "mode with which to run the Amino DHT client. Options are 'accelerated' or 'standard' or 'disabled'.",
 					},
 					&cli.BoolFlag{
 						Name:    "cached-addr-book",
@@ -62,6 +62,18 @@ func main() {
 						Value:   cli.NewStringSlice(cidContactEndpoint),
 						EnvVars: []string{"SOMEGUY_PROVIDER_ENDPOINTS"},
 						Usage:   "other Delegated Routing V1 endpoints to proxy provider requests to",
+					},
+					&cli.StringSliceFlag{
+						Name:    "http-block-provider-endpoints",
+						Value:   nil,
+						EnvVars: []string{"SOMEGUY_HTTP_BLOCK_PROVIDER_ENDPOINTS"},
+						Usage:   "list of HTTP trustless gateway endpoints to proxy provider requests to",
+					},
+					&cli.StringSliceFlag{
+						Name:    "http-block-provider-peerids",
+						Value:   nil,
+						EnvVars: []string{"SOMEGUY_HTTP_BLOCK_PROVIDER_PEERIDS"},
+						Usage:   "list of peerIDs for the HTTP trustless gateway endpoints to proxy provider requests to",
 					},
 					&cli.StringSliceFlag{
 						Name:    "peer-endpoints",
@@ -135,14 +147,16 @@ func main() {
 				Action: func(ctx *cli.Context) error {
 					cfg := &config{
 						listenAddress:               ctx.String("listen-address"),
-						acceleratedDHTClient:        ctx.Bool("accelerated-dht"),
+						dhtType:                     ctx.String("dht"),
 						cachedAddrBook:              ctx.Bool("cached-addr-book"),
 						cachedAddrBookActiveProbing: ctx.Bool("cached-addr-book-active-probing"),
 						cachedAddrBookRecentTTL:     ctx.Duration("cached-addr-book-recent-ttl"),
 
-						contentEndpoints: ctx.StringSlice("provider-endpoints"),
-						peerEndpoints:    ctx.StringSlice("peer-endpoints"),
-						ipnsEndpoints:    ctx.StringSlice("ipns-endpoints"),
+						contentEndpoints:       ctx.StringSlice("provider-endpoints"),
+						peerEndpoints:          ctx.StringSlice("peer-endpoints"),
+						ipnsEndpoints:          ctx.StringSlice("ipns-endpoints"),
+						blockProviderEndpoints: ctx.StringSlice("http-block-provider-endpoints"),
+						blockProviderPeerIDs:   ctx.StringSlice("http-block-provider-peerids"),
 
 						libp2pListenAddress: ctx.StringSlice("libp2p-listen-addrs"),
 						connMgrLow:          ctx.Int("libp2p-connmgr-low"),
@@ -157,10 +171,12 @@ func main() {
 
 					fmt.Printf("Starting %s %s\n", name, version)
 
-					fmt.Printf("SOMEGUY_ACCELERATED_DHT = %t\n", cfg.acceleratedDHTClient)
+					fmt.Printf("SOMEGUY_DHT = %s\n", cfg.dhtType)
 					printIfListConfigured("SOMEGUY_PROVIDER_ENDPOINTS = ", cfg.contentEndpoints)
 					printIfListConfigured("SOMEGUY_PEER_ENDPOINTS = ", cfg.peerEndpoints)
 					printIfListConfigured("SOMEGUY_IPNS_ENDPOINTS = ", cfg.ipnsEndpoints)
+					printIfListConfigured("SOMEGUY_HTTP_BLOCK_PROVIDER_ENDPOINTS = ", cfg.blockProviderEndpoints)
+					printIfListConfigured("SOMEGUY_HTTP_BLOCK_PROVIDER_PEERIDS = ", cfg.blockProviderPeerIDs)
 
 					return start(ctx.Context, cfg)
 				},

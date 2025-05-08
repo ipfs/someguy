@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/peer"
+
 	"github.com/CAFxX/httpcompression"
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
 	"github.com/felixge/httpsnoop"
@@ -41,14 +43,16 @@ func withRequestLogger(next http.Handler) http.Handler {
 
 type config struct {
 	listenAddress               string
-	acceleratedDHTClient        bool
+	dhtType                     string
 	cachedAddrBook              bool
 	cachedAddrBookActiveProbing bool
 	cachedAddrBookRecentTTL     time.Duration
 
-	contentEndpoints []string
-	peerEndpoints    []string
-	ipnsEndpoints    []string
+	contentEndpoints       []string
+	peerEndpoints          []string
+	ipnsEndpoints          []string
+	blockProviderEndpoints []string
+	blockProviderPeerIDs   []string
 
 	libp2pListenAddress []string
 	connMgrLow          int
@@ -69,23 +73,27 @@ func start(ctx context.Context, cfg *config) error {
 
 	fmt.Printf("Someguy libp2p host listening on %v\n", h.Addrs())
 	var dhtRouting routing.Routing
-	if cfg.acceleratedDHTClient {
+	switch cfg.dhtType {
+	case "accelerated":
 		wrappedDHT, err := newBundledDHT(ctx, h)
 		if err != nil {
 			return err
 		}
 		dhtRouting = wrappedDHT
-	} else {
+	case "standard":
 		standardDHT, err := dht.New(ctx, h, dht.Mode(dht.ModeClient), dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...))
 		if err != nil {
 			return err
 		}
 		dhtRouting = standardDHT
+	case "disabled":
+	default:
+		return fmt.Errorf("invalid dht type %s, must be one of [accelerated, standard, disabled]", cfg.dhtType)
 	}
 
 	var cachedAddrBook *cachedAddrBook
 
-	if cfg.cachedAddrBook {
+	if cfg.cachedAddrBook && dhtRouting != nil {
 		fmt.Printf("Using cached address book to speed up provider discovery (active probing enabled: %t)\n", cfg.cachedAddrBookActiveProbing)
 		opts := []AddrBookOption{}
 
@@ -102,17 +110,36 @@ func start(ctx context.Context, cfg *config) error {
 		go cachedAddrBook.background(ctx, h)
 	}
 
-	crRouters, err := getCombinedRouting(cfg.contentEndpoints, dhtRouting, cachedAddrBook)
+	var blockProviderRouters []router
+	if len(cfg.blockProviderEndpoints) > 0 {
+		if len(cfg.blockProviderPeerIDs) != len(cfg.blockProviderEndpoints) {
+			return fmt.Errorf("number of block provider peer IDs must match number of endpoints")
+		}
+		for i, endpoint := range cfg.blockProviderEndpoints {
+			p, err := peer.Decode(cfg.blockProviderPeerIDs[i])
+			if err != nil {
+				return fmt.Errorf("invalid peer ID %s: %w", cfg.blockProviderPeerIDs[i], err)
+			}
+
+			r, err := newHTTPBlockRouter(endpoint, p, nil)
+			if err != nil {
+				return err
+			}
+			blockProviderRouters = append(blockProviderRouters, composableRouter{providers: r})
+		}
+	}
+
+	crRouters, err := getCombinedRouting(cfg.contentEndpoints, dhtRouting, cachedAddrBook, blockProviderRouters)
 	if err != nil {
 		return err
 	}
 
-	prRouters, err := getCombinedRouting(cfg.peerEndpoints, dhtRouting, cachedAddrBook)
+	prRouters, err := getCombinedRouting(cfg.peerEndpoints, dhtRouting, cachedAddrBook, nil)
 	if err != nil {
 		return err
 	}
 
-	ipnsRouters, err := getCombinedRouting(cfg.ipnsEndpoints, dhtRouting, cachedAddrBook)
+	ipnsRouters, err := getCombinedRouting(cfg.ipnsEndpoints, dhtRouting, cachedAddrBook, nil)
 	if err != nil {
 		return err
 	}
@@ -242,17 +269,20 @@ func newHost(cfg *config) (host.Host, error) {
 	return h, nil
 }
 
-func getCombinedRouting(endpoints []string, dht routing.Routing, cachedAddrBook *cachedAddrBook) (router, error) {
+func getCombinedRouting(endpoints []string, dht routing.Routing, cachedAddrBook *cachedAddrBook, additionalRouters []router) (router, error) {
 	var dhtRouter router
 
 	if cachedAddrBook != nil {
 		cachedRouter := NewCachedRouter(libp2pRouter{routing: dht}, cachedAddrBook)
 		dhtRouter = sanitizeRouter{cachedRouter}
-	} else {
+	} else if dht != nil {
 		dhtRouter = sanitizeRouter{libp2pRouter{routing: dht}}
 	}
 
-	if len(endpoints) == 0 {
+	if len(endpoints) == 0 && len(additionalRouters) == 0 {
+		if dhtRouter == nil {
+			return composableRouter{}, nil
+		}
 		return dhtRouter, nil
 	}
 
@@ -271,8 +301,15 @@ func getCombinedRouting(endpoints []string, dht routing.Routing, cachedAddrBook 
 		delegatedRouters = append(delegatedRouters, clientRouter{Client: drclient})
 	}
 
+	var routers []router
+	routers = append(routers, delegatedRouters...)
+	if dhtRouter != nil {
+		routers = append(routers, dhtRouter)
+	}
+	routers = append(routers, additionalRouters...)
+
 	return parallelRouter{
-		routers: append(delegatedRouters, dhtRouter),
+		routers: routers,
 	}, nil
 }
 
