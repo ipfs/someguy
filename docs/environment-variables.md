@@ -84,6 +84,9 @@ Comma-separated list of [HTTP trustless gateway](https://specs.ipfs.tech/http-ga
 
 When the configured gateway responds with HTTP 200 to an HTTP HEAD request for a block (`HEAD /ipfs/{cid}?format=raw`), `FindProviders` returns a provider record containing a PeerID from `SOMEGUY_HTTP_BLOCK_PROVIDER_PEERIDS` and the HTTP gateway endpoint as a multiaddr with `/tls/http` suffix.
 
+> [!IMPORTANT]
+> When creating a synthetic `/routing/v1` for your gateway, and not a general-purpose routing endpoint, set `SOMEGUY_DHT=disabled` and `SOMEGUY_PROVIDER_ENDPOINTS=""` to disable default DHT and HTTP routers and exclusively use the explicitly defined `SOMEGUY_HTTP_BLOCK_PROVIDER_ENDPOINTS`.
+
 Default: none
 
 ### `SOMEGUY_HTTP_BLOCK_PROVIDER_PEERIDS`
