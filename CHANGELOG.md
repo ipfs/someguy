@@ -15,6 +15,17 @@ The following emojis are used to highlight certain changes:
 
 ### Added
 
+- Added exporting of routing http client metrics: the endpoint will now include `someguy_routing_http_client_*` metrics when delegated routing clients are used:
+
+- Histogram: the latency of operations by the routing HTTP client:
+  - `someguy_routing_http_client_latency_bucket{code,error,host,operation,le}`
+  - `someguy_routing_http_client_latency_sum{code,error,host,operation}`
+  - `someguy_routing_http_client_latency_count{code,error,host,operation}`
+- Histogram: the number of elements in a response collection
+  - `someguy_routing_http_client_length_bucket{host,operation,le}`
+  - `someguy_routing_http_client_length_sum{host,operation}`
+  - `someguy_routing_http_client_length_count{host,operation}`
+
 ### Changed
 
 ### Removed
