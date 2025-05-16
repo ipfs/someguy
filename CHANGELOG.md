@@ -15,8 +15,20 @@ The following emojis are used to highlight certain changes:
 
 ### Added
 
+### Changed
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [v0.9.1]
+
+### Added
+
 - Added exporting of routing http client metrics: the endpoint will now include `someguy_routing_http_client_*` metrics when delegated routing clients are used:
-  - Histogram: the latency of operations by the routing HTTP client:
+  - Histogram: the latency of operations by the routing HTTP client
     - `someguy_routing_http_client_latency_bucket{code,error,host,operation,le}`
     - `someguy_routing_http_client_latency_sum{code,error,host,operation}`
     - `someguy_routing_http_client_latency_count{code,error,host,operation}`
@@ -25,14 +37,6 @@ The following emojis are used to highlight certain changes:
     - `someguy_routing_http_client_length_sum{host,operation}`
     - `someguy_routing_http_client_length_count{host,operation}`
   - See [docs/metrics.md](https://github.com/ipfs/someguy/blob/main/docs/metrics.md) for more details.
-
-### Changed
-
-### Removed
-
-### Fixed
-
-### Security
 
 ## [v0.9.0]
 
