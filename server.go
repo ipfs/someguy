@@ -14,7 +14,9 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/peer"
+	"go.opencensus.io/stats/view"
 
+	ocprom "contrib.go.opencensus.io/exporter/prometheus"
 	"github.com/CAFxX/httpcompression"
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
 	"github.com/felixge/httpsnoop"
@@ -33,6 +35,28 @@ import (
 )
 
 var logger = logging.Logger(name)
+
+// setup opencensus -> prometheus forwarding for delegated routing metrics
+func init() {
+	promRegistry, ok := prometheus.DefaultRegisterer.(*prometheus.Registry)
+	if !ok {
+		logger.Error("delegated routing metrics: error casting DefaultRegisterer")
+		return
+	}
+	pe, err := ocprom.NewExporter(ocprom.Options{
+		Namespace: "someguy",
+		Registry:  promRegistry,
+		OnError: func(err error) {
+			logger.Errorf("ocprom error: %w", err)
+		},
+	})
+	if err != nil {
+		logger.Errorf("delegated routing metrics: error creating exporter: %w", err)
+		return
+	}
+	view.RegisterExporter(pe)
+	view.SetReportingPeriod(2 * time.Second)
+}
 
 func withRequestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -299,6 +323,11 @@ func getCombinedRouting(endpoints []string, dht routing.Routing, cachedAddrBook 
 			return nil, err
 		}
 		delegatedRouters = append(delegatedRouters, clientRouter{Client: drclient})
+	}
+
+	// setup delegated routing client metrics
+	if err := view.Register(drclient.OpenCensusViews...); err != nil {
+		return nil, fmt.Errorf("registering HTTP delegated routing views: %w", err)
 	}
 
 	var routers []router
