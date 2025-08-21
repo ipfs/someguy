@@ -1,6 +1,6 @@
 module github.com/ipfs/someguy
 
-go 1.23.0
+go 1.24
 
 require (
 	contrib.go.opencensus.io/exporter/prometheus v0.4.2
