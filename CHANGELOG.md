@@ -17,6 +17,8 @@ The following emojis are used to highlight certain changes:
 
 ### Changed
 
+- Updated to [Go 1.25](https://go.dev/doc/go1.25)
+
 ### Removed
 
 ### Fixed
