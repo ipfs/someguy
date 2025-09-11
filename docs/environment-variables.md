@@ -93,6 +93,8 @@ Default: none
 
 Comma-separated list of [multibase-encoded peerIDs](https://github.com/libp2p/specs/blob/master/peer-ids/peer-ids.md#string-representation) to use in synthetic provider records returned for HTTP providers in `SOMEGUY_HTTP_BLOCK_PROVIDER_ENDPOINTS`.
 
+If no peerIDs are passed, but provider endpoints are configured then auto-generated peerIDs will be provided.
+
 Default: none
 
 ### `SOMEGUY_LIBP2P_LISTEN_ADDRS`
