@@ -91,9 +91,9 @@ Default: none
 
 ### `SOMEGUY_HTTP_BLOCK_PROVIDER_PEERIDS`
 
-Comma-separated list of [multibase-encoded peerIDs](https://github.com/libp2p/specs/blob/master/peer-ids/peer-ids.md#string-representation) to use in synthetic provider records returned for HTTP providers in `SOMEGUY_HTTP_BLOCK_PROVIDER_ENDPOINTS`.
+Comma-separated list of [multibase-encoded peerIDs](https://github.com/libp2p/specs/blob/master/peer-ids/peer-ids.md#string-representation) to use in synthetic provider records returned for HTTP providers in `SOMEGUY_HTTP_BLOCK_PROVIDER_ENDPOINTS`. The order of PeerIDs must match the order of endpoints.
 
-If no peerIDs are passed, but provider endpoints are configured then auto-generated peerIDs will be provided.
+If no peerIDs are passed but provider endpoints are configured, synthetic PeerIDs will be automatically generated. These are deterministic identifiers derived from SHA256 hashes of the endpoint URLs, used solely for routing system compatibility. Since these providers use HTTP trustless gateway protocol rather than libp2p, the PeerIDs are purely synthetic and never participate in any cryptographic operations or peer authentication.
 
 Default: none
 
