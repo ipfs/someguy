@@ -296,8 +296,8 @@ func TestFindProviders(t *testing.T) {
 		var d router
 		d = parallelRouter{}
 		it, err := d.FindProviders(ctx, c, 10)
-
 		require.NoError(t, err)
+		defer it.Close()
 		require.False(t, it.Next())
 
 		mr1 := &mockRouter{}
@@ -338,15 +338,31 @@ func TestFindProviders(t *testing.T) {
 
 		it, err = d.FindProviders(ctx, c, 10)
 		require.NoError(t, err)
+		defer it.Close()
 
 		results, err := iter.ReadAllResults(it)
 		require.NoError(t, err)
 		require.Len(t, results, 5)
 
-		require.Eventually(t, func() bool {
-			return len(results[0].(*types.PeerRecord).Addrs) == 1
-		}, time.Second*3, time.Millisecond*100)
-		require.Equal(t, publicAddr.String(), results[0].(*types.PeerRecord).Addrs[0].String())
+		// The parallelRouter uses manyIter which merges results from multiple routers concurrently.
+		// Both mr1 and mr2 send a record for peers[0]:
+		// - mr1 sends peers[0] WITH addresses (private, loopback, public)
+		// - mr2 sends peers[0] WITHOUT addresses
+		// Due to concurrent execution, either record could arrive first in the results.
+		// The parallelRouter doesn't deduplicate, so both records are included.
+		// We need to find the record that has addresses to verify the sanitizeRouter
+		// correctly filtered out private/loopback addresses, keeping only public ones.
+		var peerWithAddrs *types.PeerRecord
+		for _, r := range results {
+			pr := r.(*types.PeerRecord)
+			if *pr.ID == peers[0] && len(pr.Addrs) > 0 {
+				peerWithAddrs = pr
+				break
+			}
+		}
+		require.NotNil(t, peerWithAddrs, "should have found peer[0] with addresses")
+		require.Len(t, peerWithAddrs.Addrs, 1)
+		require.Equal(t, publicAddr.String(), peerWithAddrs.Addrs[0].String())
 	})
 
 	t.Run("Failed to Create All Iterators", func(t *testing.T) {
@@ -389,6 +405,7 @@ func TestFindProviders(t *testing.T) {
 
 		it, err := d.FindProviders(ctx, c, 10)
 		require.NoError(t, err)
+		defer it.Close()
 
 		results, err := iter.ReadAllResults(it)
 		require.NoError(t, err)
@@ -405,8 +422,8 @@ func TestFindPeers(t *testing.T) {
 
 		d := parallelRouter{}
 		it, err := d.FindPeers(ctx, pid, 10)
-
 		require.NoError(t, err)
+		defer it.Close()
 		require.False(t, it.Next())
 
 		mr1 := &mockRouter{}
@@ -439,6 +456,7 @@ func TestFindPeers(t *testing.T) {
 
 		it, err = d.FindPeers(ctx, pid, 10)
 		require.NoError(t, err)
+		defer it.Close()
 
 		results, err := iter.ReadAllResults(it)
 		require.NoError(t, err)
@@ -484,6 +502,7 @@ func TestFindPeers(t *testing.T) {
 
 		it, err := d.FindPeers(ctx, pid, 10)
 		require.NoError(t, err)
+		defer it.Close()
 
 		results, err := iter.ReadAllResults(it)
 		require.NoError(t, err)

@@ -195,9 +195,20 @@ func (mi *manyIter[T]) Val() iter.Result[T] {
 }
 
 func (mi *manyIter[T]) Close() error {
+	if mi.done {
+		return nil // Already closed, idempotent
+	}
 	mi.done = true
-	mi.cancel()
-	mi.wg.Wait()
+	mi.cancel() // Signal goroutines to stop
+
+	// The channel will be closed by the goroutine in newManyIter once all workers finish
+	// We just need to drain it to unblock any pending sends
+	// This is expected behavior when client terminates early (per HTTP routing spec)
+	for range mi.ch {
+		// Discard remaining values
+	}
+
+	// Now close child iterators
 	var err error
 	for _, it := range mi.its {
 		err = errors.Join(err, it.Close())
