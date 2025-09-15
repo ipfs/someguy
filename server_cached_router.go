@@ -144,30 +144,23 @@ func (it *cacheFallbackIter) Next() bool {
 		// Try to get the next value from the source iterator first
 		if it.sourceIter.Next() {
 			val := it.sourceIter.Val()
-			handleRecord := func(id *peer.ID, record *types.PeerRecord) bool {
-				record.Addrs = it.router.withAddrsFromCache(addrQueryOriginProviders, *id, record.Addrs)
-				if len(record.Addrs) > 0 {
-					it.current = iter.Result[types.Record]{Val: record}
-					return true
-				}
-				logger.Infow("no cached addresses found in cacheFallbackIter, dispatching find peers", "peer", id)
-
-				if it.router.cachedAddrBook.ShouldProbePeer(*id) {
-					it.ongoingLookups.Add(1) // important to increment before dispatchFindPeer
-					// If a record has no addrs, we dispatch a lookup to find addresses
-					go it.dispatchFindPeer(*record)
-				}
-				// Continue the outer loop to try next source item or wait for lookups
-				return false
-			}
 
 			switch val.Val.GetSchema() {
 			case types.SchemaPeer:
 				if record, ok := val.Val.(*types.PeerRecord); ok {
-					if handleRecord(record.ID, record) {
+					record.Addrs = it.router.withAddrsFromCache(addrQueryOriginProviders, *record.ID, record.Addrs)
+					if len(record.Addrs) > 0 {
+						it.current = iter.Result[types.Record]{Val: record}
 						return true
 					}
-					// handleRecord returned false, continue to next source item
+
+					logger.Infow("no cached addresses found in cacheFallbackIter, dispatching find peers", "peer", record.ID)
+					if it.router.cachedAddrBook.ShouldProbePeer(*record.ID) {
+						it.ongoingLookups.Add(1) // important to increment before dispatchFindPeer
+						// If a record has no addrs, we dispatch a lookup to find addresses
+						go it.dispatchFindPeer(*record)
+					}
+					// Continue to try next source item
 					continue
 				}
 			}
@@ -187,9 +180,9 @@ func (it *cacheFallbackIter) Next() bool {
 		// Use a timeout to recheck ongoingLookups periodically
 		// This prevents deadlock if ongoingLookups becomes 0 after we check
 		timer := time.NewTimer(100 * time.Millisecond)
+		defer timer.Stop() // Ensure cleanup even if we return early
 		select {
 		case result, ok := <-it.findPeersResult:
-			timer.Stop()
 			if !ok {
 				return false // channel closed. We're done
 			}
@@ -199,7 +192,6 @@ func (it *cacheFallbackIter) Next() bool {
 			}
 			// If no addresses, continue the loop to check for more source items or results
 		case <-it.ctx.Done():
-			timer.Stop()
 			return false
 		case <-timer.C:
 			// Timeout expired, loop back to try source iterator again and recheck ongoingLookups
