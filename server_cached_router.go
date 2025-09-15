@@ -140,55 +140,71 @@ func NewCacheFallbackIter(sourceIter iter.ResultIter[types.Record], router cache
 }
 
 func (it *cacheFallbackIter) Next() bool {
-	// Try to get the next value from the source iterator first
-	if it.sourceIter.Next() {
-		val := it.sourceIter.Val()
-		handleRecord := func(id *peer.ID, record *types.PeerRecord) bool {
-			record.Addrs = it.router.withAddrsFromCache(addrQueryOriginProviders, *id, record.Addrs)
-			if len(record.Addrs) > 0 {
-				it.current = iter.Result[types.Record]{Val: record}
-				return true
-			}
-			logger.Infow("no cached addresses found in cacheFallbackIter, dispatching find peers", "peer", id)
+	for {
+		// Try to get the next value from the source iterator first
+		if it.sourceIter.Next() {
+			val := it.sourceIter.Val()
+			handleRecord := func(id *peer.ID, record *types.PeerRecord) bool {
+				record.Addrs = it.router.withAddrsFromCache(addrQueryOriginProviders, *id, record.Addrs)
+				if len(record.Addrs) > 0 {
+					it.current = iter.Result[types.Record]{Val: record}
+					return true
+				}
+				logger.Infow("no cached addresses found in cacheFallbackIter, dispatching find peers", "peer", id)
 
-			if it.router.cachedAddrBook.ShouldProbePeer(*id) {
-				it.ongoingLookups.Add(1) // important to increment before dispatchFindPeer
-				// If a record has no addrs, we dispatch a lookup to find addresses
-				go it.dispatchFindPeer(*record)
+				if it.router.cachedAddrBook.ShouldProbePeer(*id) {
+					it.ongoingLookups.Add(1) // important to increment before dispatchFindPeer
+					// If a record has no addrs, we dispatch a lookup to find addresses
+					go it.dispatchFindPeer(*record)
+				}
+				// Continue the outer loop to try next source item or wait for lookups
+				return false
 			}
-			return it.Next() // Recursively call Next() to either read from sourceIter or wait for lookup result
+
+			switch val.Val.GetSchema() {
+			case types.SchemaPeer:
+				if record, ok := val.Val.(*types.PeerRecord); ok {
+					if handleRecord(record.ID, record) {
+						return true
+					}
+					// handleRecord returned false, continue to next source item
+					continue
+				}
+			}
+			it.current = val // pass through unknown schemas
+			return true
 		}
 
-		switch val.Val.GetSchema() {
-		case types.SchemaPeer:
-			if record, ok := val.Val.(*types.PeerRecord); ok {
-				return handleRecord(record.ID, record)
-			}
+		// No more source items. If there are still ongoing lookups, wait for them
+		ongoing := it.ongoingLookups.Load()
+		if ongoing == 0 {
+			// No more lookups, we're done
+			return false
 		}
-		it.current = val // pass through unknown schemas
-		return true
-	}
 
-	// If there are still ongoing lookups, wait for them
-	if it.ongoingLookups.Load() > 0 {
-		logger.Infow("waiting for ongoing find peers result")
+		logger.Infow("waiting for ongoing find peers result", "ongoing", ongoing)
+
+		// Use a timeout to recheck ongoingLookups periodically
+		// This prevents deadlock if ongoingLookups becomes 0 after we check
+		timer := time.NewTimer(100 * time.Millisecond)
 		select {
 		case result, ok := <-it.findPeersResult:
+			timer.Stop()
 			if !ok {
 				return false // channel closed. We're done
 			}
 			if len(result.Addrs) > 0 { // Only if the lookup returned a result and it has addrs
 				it.current = iter.Result[types.Record]{Val: &result}
 				return true
-			} else {
-				return it.Next() // recursively call Next() in case there are more ongoing lookups
 			}
+			// If no addresses, continue the loop to check for more source items or results
 		case <-it.ctx.Done():
+			timer.Stop()
 			return false
+		case <-timer.C:
+			// Timeout expired, loop back to try source iterator again and recheck ongoingLookups
 		}
 	}
-
-	return false
 }
 
 func (it *cacheFallbackIter) Val() iter.Result[types.Record] {
