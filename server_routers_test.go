@@ -296,8 +296,8 @@ func TestFindProviders(t *testing.T) {
 		var d router
 		d = parallelRouter{}
 		it, err := d.FindProviders(ctx, c, 10)
-
 		require.NoError(t, err)
+		defer it.Close()
 		require.False(t, it.Next())
 
 		mr1 := &mockRouter{}
@@ -338,6 +338,7 @@ func TestFindProviders(t *testing.T) {
 
 		it, err = d.FindProviders(ctx, c, 10)
 		require.NoError(t, err)
+		defer it.Close()
 
 		results, err := iter.ReadAllResults(it)
 		require.NoError(t, err)
@@ -421,8 +422,8 @@ func TestFindPeers(t *testing.T) {
 
 		d := parallelRouter{}
 		it, err := d.FindPeers(ctx, pid, 10)
-
 		require.NoError(t, err)
+		defer it.Close()
 		require.False(t, it.Next())
 
 		mr1 := &mockRouter{}
@@ -455,6 +456,7 @@ func TestFindPeers(t *testing.T) {
 
 		it, err = d.FindPeers(ctx, pid, 10)
 		require.NoError(t, err)
+		defer it.Close()
 
 		results, err := iter.ReadAllResults(it)
 		require.NoError(t, err)
