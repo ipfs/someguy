@@ -201,13 +201,8 @@ func (mi *manyIter[T]) Close() error {
 	mi.done = true
 	mi.cancel() // Signal goroutines to stop
 
-	// Start a goroutine to close the channel once all senders finish
-	go func() {
-		mi.wg.Wait()
-		close(mi.ch)
-	}()
-
-	// Drain channel until it's closed to unblock any pending sends
+	// The channel will be closed by the goroutine in newManyIter once all workers finish
+	// We just need to drain it to unblock any pending sends
 	// This is expected behavior when client terminates early (per HTTP routing spec)
 	for range mi.ch {
 		// Discard remaining values

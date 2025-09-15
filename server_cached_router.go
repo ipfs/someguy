@@ -226,6 +226,9 @@ func (it *cacheFallbackIter) dispatchFindPeer(record types.PeerRecord) {
 	defer cancel()
 
 	peersIt, err := it.router.FindPeers(ctx, *record.ID, 1)
+	if err == nil {
+		defer peersIt.Close() // Ensure cleanup of the iterator
+	}
 
 	// Check if the parent context is done before sending
 	if it.ctx.Err() != nil {
