@@ -117,17 +117,22 @@ type cacheFallbackIter struct {
 	findPeersResult chan types.PeerRecord
 	router          cachedRouter
 	ctx             context.Context
+	cancel          context.CancelFunc
 	ongoingLookups  atomic.Int32
 }
 
 // NewCacheFallbackIter is a wrapper around a results iterator that will resolve peers with no addresses from cache and if no cached addresses, will look them up via FindPeers.
 // It's a bit complex because it ensures we continue iterating without blocking on the FindPeers call.
 func NewCacheFallbackIter(sourceIter iter.ResultIter[types.Record], router cachedRouter, ctx context.Context) *cacheFallbackIter {
+	// Create a cancellable context for this iterator
+	iterCtx, cancel := context.WithCancel(ctx)
+
 	iter := &cacheFallbackIter{
 		sourceIter:      sourceIter,
 		router:          router,
-		ctx:             ctx,
-		findPeersResult: make(chan types.PeerRecord),
+		ctx:             iterCtx,
+		cancel:          cancel,
+		findPeersResult: make(chan types.PeerRecord, 100), // Buffer to avoid drops in typical cases
 		ongoingLookups:  atomic.Int32{},
 	}
 
@@ -194,6 +199,12 @@ func (it *cacheFallbackIter) Val() iter.Result[types.Record] {
 }
 
 func (it *cacheFallbackIter) Close() error {
+	// Cancel the context to stop any ongoing lookups
+	if it.cancel != nil {
+		it.cancel()
+	}
+
+	// Close the source iterator
 	return it.sourceIter.Close()
 }
 
@@ -213,19 +224,33 @@ func (it *cacheFallbackIter) dispatchFindPeer(record types.PeerRecord) {
 		return // Exit early if the parent context is done
 	}
 
+	// Helper to send result without blocking
+	sendResult := func(r types.PeerRecord) {
+		select {
+		case it.findPeersResult <- r:
+			// Sent successfully
+		case <-it.ctx.Done():
+			// Context cancelled, exit
+		default:
+			// Channel full or nobody listening anymore, drop the result
+			// This is OK - these are best-effort background lookups
+			logger.Debugw("dropping find peers result, nobody listening", "peer", r.ID)
+		}
+	}
+
 	if err != nil {
-		it.findPeersResult <- record // pass back the record with no addrs
+		sendResult(record) // pass back the record with no addrs
 		return
 	}
 	peers, err := iter.ReadAllResults(peersIt)
 	if err != nil {
-		it.findPeersResult <- record // pass back the record with no addrs
+		sendResult(record) // pass back the record with no addrs
 		return
 	}
 	if len(peers) > 0 {
 		// If we found the peer, pass back the result
-		it.findPeersResult <- *peers[0]
+		sendResult(*peers[0])
 	} else {
-		it.findPeersResult <- record // pass back the record with no addrs
+		sendResult(record) // pass back the record with no addrs
 	}
 }
