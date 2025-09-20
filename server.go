@@ -20,6 +20,7 @@ import (
 	"github.com/CAFxX/httpcompression"
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
 	"github.com/felixge/httpsnoop"
+	autoconf "github.com/ipfs/boxo/autoconf"
 	drclient "github.com/ipfs/boxo/routing/http/client"
 	"github.com/ipfs/boxo/routing/http/server"
 	logging "github.com/ipfs/go-log/v2"
@@ -87,6 +88,8 @@ type config struct {
 
 	tracingAuth      string
 	samplingFraction float64
+
+	autoConf autoConfConfig
 }
 
 func start(ctx context.Context, cfg *config) error {
@@ -95,17 +98,36 @@ func start(ctx context.Context, cfg *config) error {
 		return err
 	}
 
+	// Setup autoconf
+	var autoConf *autoconf.Config
+	if cfg.autoConf.enabled && cfg.autoConf.url != "" {
+		client, err := createAutoConfClient(cfg.autoConf)
+		if err != nil {
+			logger.Errorf("Failed to create autoconf client: %v", err)
+		} else {
+			// Start primes cache and starts background updater
+			// Note: Start() always returns a config (using fallback if needed)
+			autoConf, err = client.Start(ctx)
+			if err != nil {
+				logger.Errorf("Failed to start autoconf updater: %v", err)
+				// Continue with the config we got (likely fallback)
+			}
+		}
+	}
+
+	bootstrapAddrInfos := getBootstrapPeerAddrInfos(cfg, autoConf)
+
 	fmt.Printf("Someguy libp2p host listening on %v\n", h.Addrs())
 	var dhtRouting routing.Routing
 	switch cfg.dhtType {
 	case "accelerated":
-		wrappedDHT, err := newBundledDHT(ctx, h)
+		wrappedDHT, err := newBundledDHT(ctx, h, bootstrapAddrInfos)
 		if err != nil {
 			return err
 		}
 		dhtRouting = wrappedDHT
 	case "standard":
-		standardDHT, err := dht.New(ctx, h, dht.Mode(dht.ModeClient), dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...))
+		standardDHT, err := dht.New(ctx, h, dht.Mode(dht.ModeClient), dht.BootstrapPeers(bootstrapAddrInfos...))
 		if err != nil {
 			return err
 		}

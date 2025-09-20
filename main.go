@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -145,6 +146,30 @@ func main() {
 						EnvVars: []string{"SOMEGUY_SAMPLING_FRACTION"},
 						Usage:   "Rate at which to sample gateway requests. Does not include requests with traceheaders which will always sample",
 					},
+					&cli.StringFlag{
+						Name:    "datadir",
+						Value:   "",
+						EnvVars: []string{"SOMEGUY_DATADIR"},
+						Usage:   "Directory for persistent data (autoconf cache)",
+					},
+					&cli.BoolFlag{
+						Name:    "autoconf",
+						Value:   true,
+						EnvVars: []string{"SOMEGUY_AUTOCONF"},
+						Usage:   "Enable autoconf for bootstrap, DNS resolvers, and HTTP routers",
+					},
+					&cli.StringFlag{
+						Name:    "autoconf-url",
+						Value:   "https://conf.ipfs-mainnet.org/autoconf.json",
+						EnvVars: []string{"SOMEGUY_AUTOCONF_URL"},
+						Usage:   "URL to fetch autoconf data from",
+					},
+					&cli.DurationFlag{
+						Name:    "autoconf-refresh",
+						Value:   24 * time.Hour,
+						EnvVars: []string{"SOMEGUY_AUTOCONF_REFRESH"},
+						Usage:   "How often to refresh autoconf data",
+					},
 				},
 				Action: func(ctx *cli.Context) error {
 					cfg := &config{
@@ -169,6 +194,13 @@ func main() {
 
 						tracingAuth:      ctx.String("tracing-auth"),
 						samplingFraction: ctx.Float64("sampling-fraction"),
+
+						autoConf: autoConfConfig{
+							enabled:         ctx.Bool("autoconf"),
+							url:             ctx.String("autoconf-url"),
+							refreshInterval: ctx.Duration("autoconf-refresh"),
+							cacheDir:        filepath.Join(ctx.String("datadir"), ".autoconf-cache"),
+						},
 					}
 
 					fmt.Printf("Starting %s %s\n", name, version)
