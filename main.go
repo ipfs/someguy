@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ipfs/boxo/autoconf"
 	"github.com/ipfs/boxo/ipns"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -17,8 +18,6 @@ import (
 	"github.com/multiformats/go-multihash"
 	"github.com/urfave/cli/v2"
 )
-
-const cidContactEndpoint = "https://cid.contact"
 
 func main() {
 	app := &cli.App{
@@ -62,7 +61,7 @@ func main() {
 					},
 					&cli.StringSliceFlag{
 						Name:    "provider-endpoints",
-						Value:   cli.NewStringSlice(cidContactEndpoint),
+						Value:   cli.NewStringSlice(autoconf.AutoPlaceholder),
 						EnvVars: []string{"SOMEGUY_PROVIDER_ENDPOINTS"},
 						Usage:   "other Delegated Routing V1 endpoints to proxy provider requests to",
 					},
@@ -241,13 +240,37 @@ func main() {
 				Flags: []cli.Flag{
 					&cli.StringFlag{
 						Name:  "endpoint",
-						Value: cidContactEndpoint,
+						Value: autoconf.AutoPlaceholder,
 						Usage: "the Delegated Routing V1 endpoint to ask",
 					},
 					&cli.BoolFlag{
 						Name:  "pretty",
 						Value: false,
 						Usage: "output data in a prettier format that may convey less information",
+					},
+					&cli.StringFlag{
+						Name:    "datadir",
+						Value:   "",
+						EnvVars: []string{"SOMEGUY_DATADIR"},
+						Usage:   "Directory for persistent data (autoconf cache)",
+					},
+					&cli.BoolFlag{
+						Name:    "autoconf",
+						Value:   true,
+						EnvVars: []string{"SOMEGUY_AUTOCONF"},
+						Usage:   "Enable autoconf for bootstrap, DNS resolvers, and HTTP routers",
+					},
+					&cli.StringFlag{
+						Name:    "autoconf-url",
+						Value:   "https://conf.ipfs-mainnet.org/autoconf.json",
+						EnvVars: []string{"SOMEGUY_AUTOCONF_URL"},
+						Usage:   "URL to fetch autoconf data from",
+					},
+					&cli.DurationFlag{
+						Name:    "autoconf-refresh",
+						Value:   24 * time.Hour,
+						EnvVars: []string{"SOMEGUY_AUTOCONF_REFRESH"},
+						Usage:   "How often to refresh autoconf data",
 					},
 				},
 				Subcommands: []*cli.Command{
@@ -264,7 +287,33 @@ func main() {
 							if err != nil {
 								return err
 							}
-							return findProviders(ctx.Context, c, ctx.String("endpoint"), ctx.Bool("pretty"))
+
+							cfg := &config{
+								dhtType:          "none",
+								contentEndpoints: []string{ctx.String("endpoint")},
+								autoConf: autoConfConfig{
+									enabled:         ctx.Bool("autoconf"),
+									url:             ctx.String("autoconf-url"),
+									refreshInterval: ctx.Duration("autoconf-refresh"),
+									cacheDir:        filepath.Join(ctx.String("datadir"), ".autoconf-cache"),
+								},
+							}
+
+							autoConf, err := startAutoConf(ctx.Context, cfg)
+							if err != nil {
+								logger.Error(err.Error())
+							}
+
+							if err = expandContentEndpoints(cfg, autoConf); err != nil {
+								return err
+							}
+							if len(cfg.contentEndpoints) == 0 {
+								return errors.New("No delegated routing endpoint configured. Use --endpoint to specify")
+							}
+
+							endPoint := cfg.contentEndpoints[0]
+
+							return findProviders(ctx.Context, c, endPoint, ctx.Bool("pretty"))
 						},
 					},
 					{
@@ -280,7 +329,33 @@ func main() {
 							if err != nil {
 								return err
 							}
-							return findPeers(ctx.Context, pid, ctx.String("endpoint"), ctx.Bool("pretty"))
+							cfg := &config{
+								dhtType:          "none",
+								contentEndpoints: []string{ctx.String("endpoint")},
+								autoConf: autoConfConfig{
+									enabled:         ctx.Bool("autoconf"),
+									url:             ctx.String("autoconf-url"),
+									refreshInterval: ctx.Duration("autoconf-refresh"),
+									cacheDir:        filepath.Join(ctx.String("datadir"), ".autoconf-cache"),
+								},
+							}
+
+							autoConf, err := startAutoConf(ctx.Context, cfg)
+							if err != nil {
+								logger.Error(err.Error())
+							}
+
+							if err = expandContentEndpoints(cfg, autoConf); err != nil {
+								return err
+							}
+							if len(cfg.contentEndpoints) == 0 {
+								return errors.New("No delegated routing endpoint configured. Use --endpoint to specify")
+							}
+
+							endPoint := cfg.contentEndpoints[0]
+							fmt.Println("---> endpoints:", cfg.contentEndpoints)
+
+							return findPeers(ctx.Context, pid, endPoint, ctx.Bool("pretty"))
 						},
 					},
 					{

@@ -20,7 +20,6 @@ import (
 	"github.com/CAFxX/httpcompression"
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
 	"github.com/felixge/httpsnoop"
-	autoconf "github.com/ipfs/boxo/autoconf"
 	drclient "github.com/ipfs/boxo/routing/http/client"
 	"github.com/ipfs/boxo/routing/http/server"
 	logging "github.com/ipfs/go-log/v2"
@@ -98,24 +97,15 @@ func start(ctx context.Context, cfg *config) error {
 		return err
 	}
 
-	// Setup autoconf
-	var autoConf *autoconf.Config
-	if cfg.autoConf.enabled && cfg.autoConf.url != "" {
-		client, err := createAutoConfClient(cfg.autoConf)
-		if err != nil {
-			logger.Errorf("Failed to create autoconf client: %v", err)
-		} else {
-			// Start primes cache and starts background updater
-			// Note: Start() always returns a config (using fallback if needed)
-			autoConf, err = client.Start(ctx)
-			if err != nil {
-				logger.Errorf("Failed to start autoconf updater: %v", err)
-				// Continue with the config we got (likely fallback)
-			}
-		}
+	autoConf, err := startAutoConf(ctx, cfg)
+	if err != nil {
+		logger.Error(err.Error())
 	}
 
 	bootstrapAddrInfos := getBootstrapPeerAddrInfos(cfg, autoConf)
+	if err = expandContentEndpoints(cfg, autoConf); err != nil {
+		return err
+	}
 
 	fmt.Printf("Someguy libp2p host listening on %v\n", h.Addrs())
 	var dhtRouting routing.Routing
