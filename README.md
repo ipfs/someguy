@@ -63,6 +63,20 @@ If you don't want to run a server yourself, but want to query some other server,
 
 For more details run `someguy ask --help`.
 
+### AutoConf
+
+Someguy supports automatic configuration of bootstrap peers and delegated routing endpoints through the autoconf feature. When enabled (default), Someguy will fetch configuration from a remote URL and automatically expand the special `auto` placeholder value with network-appropriate defaults.
+
+This feature can be configured via:
+- `--autoconf` / `SOMEGUY_AUTOCONF`: Enable/disable autoconf (default: `true`)
+- `--autoconf-url` / `SOMEGUY_AUTOCONF_URL`: URL to fetch configuration from (default: `https://conf.ipfs-mainnet.org/autoconf.json`)
+- `--autoconf-refresh` / `SOMEGUY_AUTOCONF_REFRESH`: How often to refresh configuration (default: `24h`)
+
+The `auto` placeholder can be used in:
+- `--endpoing` / `SOMEGUY_DELEGATED_ENDPOINT`: the Delegated Routing V1 endpoint to ask
+
+**Note:** When autoconf is disabled (`--autoconf=false`), using the `auto` placeholder will cause an error. You must provide explicit values for these configurations when autoconf is disabled.
+
 ## Deployment
 
 Suggested method for self-hosting is to run a [prebuilt Docker image](#docker).
