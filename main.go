@@ -239,9 +239,10 @@ func main() {
 				Name: "ask",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
-						Name:  "endpoint",
-						Value: autoconf.AutoPlaceholder,
-						Usage: "the Delegated Routing V1 endpoint to ask",
+						Name:    "endpoint",
+						Value:   autoconf.AutoPlaceholder,
+						EnvVars: []string{"SOMEGUY_DELEGATED_ENDPOINT"},
+						Usage:   "the Delegated Routing V1 endpoint to ask",
 					},
 					&cli.BoolFlag{
 						Name:  "pretty",

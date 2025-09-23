@@ -62,7 +62,7 @@ func getBootstrapPeerAddrInfos(cfg *config, autoConf *autoconf.Config) []peer.Ad
 func expandContentEndpoints(cfg *config, autoConf *autoconf.Config) error {
 	if !cfg.autoConf.enabled {
 		if slices.Contains(cfg.contentEndpoints, autoconf.AutoPlaceholder) {
-			return autoconfDisabledError("HTTP routers", "SOMEGUY_HTTP_ROUTERS", "--http-routers")
+			return autoconfDisabledError("endpoint option", "SOMEGUY_DELEGATED_ENDPOINT", "--endpoint")
 		}
 		return nil
 	}
