@@ -18,8 +18,8 @@ type bundledDHT struct {
 	fullRT   *fullrt.FullRT
 }
 
-func newBundledDHT(ctx context.Context, h host.Host) (routing.Routing, error) {
-	standardDHT, err := dht.New(ctx, h, dht.Mode(dht.ModeClient), dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...))
+func newBundledDHT(ctx context.Context, h host.Host, bootstrapAddrInfos []peer.AddrInfo) (routing.Routing, error) {
+	standardDHT, err := dht.New(ctx, h, dht.Mode(dht.ModeClient), dht.BootstrapPeers(bootstrapAddrInfos...))
 	if err != nil {
 		return nil, err
 	}
@@ -31,7 +31,7 @@ func newBundledDHT(ctx context.Context, h host.Host) (routing.Routing, error) {
 				"pk":   record.PublicKeyValidator{},
 				"ipns": ipns.Validator{},
 			}),
-			dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...),
+			dht.BootstrapPeers(bootstrapAddrInfos...),
 			dht.Mode(dht.ModeClient),
 		))
 	if err != nil {
