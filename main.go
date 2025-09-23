@@ -308,10 +308,11 @@ func main() {
 								return err
 							}
 							if len(cfg.contentEndpoints) == 0 {
-								return errors.New("No delegated routing endpoint configured. Use --endpoint to specify")
+								return errors.New("no delegated routing endpoint configured, use --endpoint to specify")
 							}
 
 							endPoint := cfg.contentEndpoints[0]
+							logger.Debugf("delegated routing endpoint: %s", endPoint)
 
 							return findProviders(ctx.Context, c, endPoint, ctx.Bool("pretty"))
 						},
@@ -349,11 +350,11 @@ func main() {
 								return err
 							}
 							if len(cfg.contentEndpoints) == 0 {
-								return errors.New("No delegated routing endpoint configured. Use --endpoint to specify")
+								return errors.New("no delegated routing endpoint configured, use --endpoint to specify")
 							}
 
 							endPoint := cfg.contentEndpoints[0]
-							fmt.Println("---> endpoints:", cfg.contentEndpoints)
+							logger.Debugf("delegated routing endpoint: %s", endPoint)
 
 							return findPeers(ctx.Context, pid, endPoint, ctx.Bool("pretty"))
 						},

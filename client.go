@@ -16,7 +16,7 @@ import (
 )
 
 func findProviders(ctx context.Context, key cid.Cid, endpoint string, prettyOutput bool) error {
-	drc, err := client.New(endpoint)
+	drc, err := client.New(endpoint, client.WithDisabledLocalFiltering(true))
 	if err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func findProviders(ctx context.Context, key cid.Cid, endpoint string, prettyOutp
 }
 
 func findPeers(ctx context.Context, pid peer.ID, endpoint string, prettyOutput bool) error {
-	drc, err := client.New(endpoint)
+	drc, err := client.New(endpoint, client.WithDisabledLocalFiltering(true))
 	if err != nil {
 		return err
 	}
