@@ -15,6 +15,8 @@ The following emojis are used to highlight certain changes:
 
 ### Added
 
+- Added automatic configuration (autoconf) of bootstrap nodes and delegated routing endpoints. Autoconf can be disabled and autoconf endpoints can be manually supplied to provide alternate configuration data. Delegated routing endpoints can also be manually supplied, overriding auto-configured values.
+
 ### Changed
 
 - [go-libp2p v0.43.0](https://github.com/libp2p/go-libp2p/releases/tag/v0.43.0)
