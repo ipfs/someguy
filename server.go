@@ -329,10 +329,10 @@ func combineRouters(dht routing.Routing, cachedAddrBook *cachedAddrBook, delegat
 	var dhtRouter router
 
 	if cachedAddrBook != nil {
-		cachedRouter := NewCachedRouter(libp2pRouter{routing: dht}, cachedAddrBook)
+		cachedRouter := NewCachedRouter(libp2pRouter{host: host, routing: dht}, cachedAddrBook)
 		dhtRouter = sanitizeRouter{cachedRouter}
 	} else if dht != nil {
-		dhtRouter = sanitizeRouter{libp2pRouter{routing: dht}}
+		dhtRouter = sanitizeRouter{libp2pRouter{host: host, routing: dht}}
 	}
 
 	if len(delegatedRouters) == 0 && len(additionalRouters) == 0 {

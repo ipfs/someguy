@@ -360,6 +360,22 @@ func main() {
 						},
 					},
 					{
+						Name:      "getclosestpeers",
+						Usage:     "getclosestpeers <cid>",
+						UsageText: "Find the closest peers for a CID (can be a peer ID formated as CIDv1)",
+						Action: func(ctx *cli.Context) error {
+							if ctx.NArg() != 1 {
+								return errors.New("invalid command, see help")
+							}
+							cidStr := ctx.Args().Get(0)
+							c, err := cid.Decode(cidStr)
+							if err != nil {
+								return err
+							}
+							return getClosestPeers(ctx.Context, c, ctx.String("endpoint"), ctx.Bool("pretty"))
+						},
+					},
+					{
 						Name:      "getipns",
 						Usage:     "getipns <ipns-id>",
 						UsageText: "Get the value of an IPNS ID",
