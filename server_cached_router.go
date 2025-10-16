@@ -88,6 +88,11 @@ func (r cachedRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (it
 	return it, nil
 }
 
+func (r cachedRouter) GetClosestPeers(ctx context.Context, key cid.Cid) (iter.ResultIter[*types.PeerRecord], error) {
+	// TODO: need caching stuff?
+	return r.router.GetClosestPeers(ctx, key)
+}
+
 // withAddrsFromCache returns the best list of addrs for specified [peer.ID].
 // It will consult cache ONLY if the addrs slice passed to it is empty.
 func (r cachedRouter) withAddrsFromCache(queryOrigin string, pid peer.ID, addrs []types.Multiaddr) []types.Multiaddr {

@@ -153,17 +153,17 @@ func start(ctx context.Context, cfg *config) error {
 		}
 	}
 
-	crRouters, err := getCombinedRouting(cfg.contentEndpoints, dhtRouting, cachedAddrBook, blockProviderRouters)
+	crRouters, err := getCombinedRouting(cfg.contentEndpoints, h, dhtRouting, cachedAddrBook, blockProviderRouters)
 	if err != nil {
 		return err
 	}
 
-	prRouters, err := getCombinedRouting(cfg.peerEndpoints, dhtRouting, cachedAddrBook, nil)
+	prRouters, err := getCombinedRouting(cfg.peerEndpoints, h, dhtRouting, cachedAddrBook, nil)
 	if err != nil {
 		return err
 	}
 
-	ipnsRouters, err := getCombinedRouting(cfg.ipnsEndpoints, dhtRouting, cachedAddrBook, nil)
+	ipnsRouters, err := getCombinedRouting(cfg.ipnsEndpoints, h, dhtRouting, cachedAddrBook, nil)
 	if err != nil {
 		return err
 	}
@@ -293,14 +293,14 @@ func newHost(cfg *config) (host.Host, error) {
 	return h, nil
 }
 
-func getCombinedRouting(endpoints []string, dht routing.Routing, cachedAddrBook *cachedAddrBook, additionalRouters []router) (router, error) {
+func getCombinedRouting(endpoints []string, host host.Host, dht routing.Routing, cachedAddrBook *cachedAddrBook, additionalRouters []router) (router, error) {
 	var dhtRouter router
 
 	if cachedAddrBook != nil {
-		cachedRouter := NewCachedRouter(libp2pRouter{routing: dht}, cachedAddrBook)
+		cachedRouter := NewCachedRouter(libp2pRouter{host: host, routing: dht}, cachedAddrBook)
 		dhtRouter = sanitizeRouter{cachedRouter}
 	} else if dht != nil {
-		dhtRouter = sanitizeRouter{libp2pRouter{routing: dht}}
+		dhtRouter = sanitizeRouter{libp2pRouter{host: host, routing: dht}}
 	}
 
 	if len(endpoints) == 0 && len(additionalRouters) == 0 {
