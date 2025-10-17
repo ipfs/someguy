@@ -10,15 +10,15 @@ func TestGetCombinedRouting(t *testing.T) {
 	t.Parallel()
 
 	// Check of the result of get combined routing is a sanitize router.
-	v, err := getCombinedRouting(nil, &bundledDHT{}, nil, nil)
+	v, err := getCombinedRouting(nil, nil, &bundledDHT{}, nil, nil)
 	require.NoError(t, err)
 	require.IsType(t, sanitizeRouter{}, v)
 
-	v, err = getCombinedRouting([]string{"https://example.com/"}, nil, nil, nil)
+	v, err = getCombinedRouting([]string{"https://example.com/"}, nil, nil, nil, nil)
 	require.NoError(t, err)
 	require.IsType(t, parallelRouter{}, v)
 
-	v, err = getCombinedRouting([]string{"https://example.com/"}, &bundledDHT{}, nil, nil)
+	v, err = getCombinedRouting([]string{"https://example.com/"}, nil, &bundledDHT{}, nil, nil)
 	require.NoError(t, err)
 	require.IsType(t, parallelRouter{}, v)
 }
