@@ -89,7 +89,6 @@ func (r cachedRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (it
 }
 
 func (r cachedRouter) GetClosestPeers(ctx context.Context, key cid.Cid) (iter.ResultIter[*types.PeerRecord], error) {
-	// TODO: need caching stuff?
 	return r.router.GetClosestPeers(ctx, key)
 }
 
