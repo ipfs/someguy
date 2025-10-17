@@ -570,6 +570,22 @@ func (r sanitizeRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (
 	}), nil
 }
 
+func (r sanitizeRouter) GetClosestPeers(ctx context.Context, key cid.Cid) (iter.ResultIter[*types.PeerRecord], error) {
+	it, err := r.router.GetClosestPeers(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+
+	return iter.Map(it, func(v iter.Result[*types.PeerRecord]) iter.Result[*types.PeerRecord] {
+		if v.Err != nil || v.Val == nil {
+			return v
+		}
+
+		v.Val.Addrs = filterPrivateMultiaddr(v.Val.Addrs)
+		return v
+	}), nil
+}
+
 //lint:ignore SA1019 // ignore staticcheck
 func (r sanitizeRouter) ProvideBitswap(ctx context.Context, req *server.BitswapWriteProvideRequest) (time.Duration, error) {
 	return 0, routing.ErrNotSupported

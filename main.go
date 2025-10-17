@@ -362,13 +362,13 @@ func main() {
 					{
 						Name:      "getclosestpeers",
 						Usage:     "getclosestpeers <cid>",
-						UsageText: "Find the closest peers for a CID (can be a peer ID formated as CIDv1)",
+						UsageText: "Find DHT-closest peers to a key (CID or peer ID as CIDv1)",
 						Action: func(ctx *cli.Context) error {
 							if ctx.NArg() != 1 {
 								return errors.New("invalid command, see help")
 							}
 							cidStr := ctx.Args().Get(0)
-							c, err := cid.Decode(cidStr)
+							c, err := cid.Parse(cidStr)
 							if err != nil {
 								return err
 							}
