@@ -383,28 +383,42 @@ func (d libp2pRouter) GetClosestPeers(ctx context.Context, key cid.Cid) (iter.Re
 	var peers []peer.ID
 	var err error
 
-	switch d.routing.(type) {
+	switch v := d.routing.(type) {
 	case *dual.DHT:
-		dd := d.routing.(*dual.DHT)
-		peers, err = dd.WAN.GetClosestPeers(ctx, keyStr)
+		peers, err = v.WAN.GetClosestPeers(ctx, keyStr)
 		if err != nil {
 			return nil, err
 		}
 
-		lanPeers, err := dd.LAN.GetClosestPeers(ctx, keyStr)
+		lanPeers, err := v.LAN.GetClosestPeers(ctx, keyStr)
 		if err != nil {
-			return nil, err
+			// Log LAN error but don't fail if WAN succeeded
+			logger.Warnf("LAN DHT GetClosestPeers failed: %v", err)
+		} else {
+			peers = append(peers, lanPeers...)
 		}
-		peers = append(peers, lanPeers...)
 	case *fullrt.FullRT:
-		frt := d.routing.(*fullrt.FullRT)
-		peers, err = frt.GetClosestPeers(ctx, keyStr)
+		peers, err = v.GetClosestPeers(ctx, keyStr)
 		if err != nil {
 			return nil, err
 		}
 	case *dht.IpfsDHT:
-		d := d.routing.(*dht.IpfsDHT)
-		peers, err = d.GetClosestPeers(ctx, keyStr)
+		peers, err = v.GetClosestPeers(ctx, keyStr)
+		if err != nil {
+			return nil, err
+		}
+	case *bundledDHT:
+		// bundledDHT uses either fullRT (when ready) or standard DHT
+		// We need to call GetClosestPeers on the active DHT
+		activeDHT := v.getDHT()
+		switch dht := activeDHT.(type) {
+		case *fullrt.FullRT:
+			peers, err = dht.GetClosestPeers(ctx, keyStr)
+		case *dht.IpfsDHT:
+			peers, err = dht.GetClosestPeers(ctx, keyStr)
+		default:
+			return nil, errors.New("bundledDHT returned unexpected DHT type")
+		}
 		if err != nil {
 			return nil, err
 		}
