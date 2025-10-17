@@ -385,17 +385,11 @@ func (d libp2pRouter) GetClosestPeers(ctx context.Context, key cid.Cid) (iter.Re
 
 	switch v := d.routing.(type) {
 	case *dual.DHT:
+		// Only use WAN DHT for public HTTP Routing API.
+		// LAN DHT contains private network peers that should not be exposed publicly.
 		peers, err = v.WAN.GetClosestPeers(ctx, keyStr)
 		if err != nil {
 			return nil, err
-		}
-
-		lanPeers, err := v.LAN.GetClosestPeers(ctx, keyStr)
-		if err != nil {
-			// Log LAN error but don't fail if WAN succeeded
-			logger.Warnf("LAN DHT GetClosestPeers failed: %v", err)
-		} else {
-			peers = append(peers, lanPeers...)
 		}
 	case *fullrt.FullRT:
 		peers, err = v.GetClosestPeers(ctx, keyStr)
