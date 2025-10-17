@@ -19,6 +19,14 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+// cidContactEndpoint is the default for daemon mode (start command).
+// Used for proxying provider requests in addition to results from the local DHT client.
+const cidContactEndpoint = "https://cid.contact"
+
+// delegatedIPFSEndpoint is the default for CLI mode (ask command).
+// Used as the only source of routing results when no local DHT is available.
+const delegatedIPFSEndpoint = "https://delegated-ipfs.dev"
+
 func main() {
 	app := &cli.App{
 		Name:    name,
@@ -361,14 +369,14 @@ func main() {
 					},
 					{
 						Name:      "getclosestpeers",
-						Usage:     "getclosestpeers <cid>",
-						UsageText: "Find DHT-closest peers to a key (CID or peer ID as CIDv1)",
+						Usage:     "getclosestpeers <key>",
+						UsageText: "Find DHT-closest peers to a key (CID or peer ID)",
 						Action: func(ctx *cli.Context) error {
 							if ctx.NArg() != 1 {
 								return errors.New("invalid command, see help")
 							}
-							cidStr := ctx.Args().Get(0)
-							c, err := cid.Parse(cidStr)
+							keyStr := ctx.Args().Get(0)
+							c, err := parseKey(keyStr)
 							if err != nil {
 								return err
 							}
@@ -428,4 +436,29 @@ func printIfListConfigured(message string, list []string) {
 	if len(list) > 0 {
 		fmt.Printf(message+"%v\n", strings.Join(list, ", "))
 	}
+}
+
+// parseKey parses a string that can be either a CID or a PeerID.
+// It accepts the following formats:
+//   - Arbitrary CIDs (e.g., bafkreidcd7frenco2m6ch7mny63wztgztv3q6fctaffgowkro6kljre5ei)
+//   - CIDv1 with libp2p-key codec (e.g., bafzaajaiaejca...)
+//   - Base58-encoded PeerIDs (e.g., 12D3KooW... or QmYyQ...)
+//
+// Returns the key as a CID. PeerIDs are converted to CIDv1 with libp2p-key codec.
+func parseKey(keyStr string) (cid.Cid, error) {
+	// Try parsing as PeerID first using peer.Decode
+	// This handles legacy PeerID formats per:
+	// https://github.com/libp2p/specs/blob/master/peer-ids/peer-ids.md#string-representation
+	pid, pidErr := peer.Decode(keyStr)
+	if pidErr == nil {
+		return peer.ToCid(pid), nil
+	}
+
+	// Fall back to parsing as CID (handles arbitrary CIDs and CIDv1 libp2p-key format)
+	c, cidErr := cid.Parse(keyStr)
+	if cidErr == nil {
+		return c, nil
+	}
+
+	return cid.Cid{}, fmt.Errorf("unable to parse as CID or PeerID: %w", errors.Join(cidErr, pidErr))
 }
