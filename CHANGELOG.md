@@ -18,6 +18,11 @@ The following emojis are used to highlight certain changes:
 - AutoConf support: automatic configuration of bootstrap peers and delegated routing endpoints ([#123](https://github.com/ipfs/someguy/pull/123)). When enabled (default), the `auto` placeholder is replaced with network-recommended values.
   - All endpoint flags (`--provider-endpoints`, `--peer-endpoints`, `--ipns-endpoints`) default to `auto`
   - See [environment-variables.md](docs/environment-variables.md#someguy_autoconf) for configuration details
+- Added `/routing/v1/peers/closest/{key}` endpoint implementing [IPIP-476](https://github.com/ipfs/specs/pull/476)
+  - Returns DHT-closest peers to a given CID or PeerID
+  - Accepts both CID and legacy PeerID formats (e.g., `12D3KooW...`)
+  - Uses WAN DHT only for more reliable results
+  - Includes cached addresses in results when available
 
 ### Changed
 
@@ -25,6 +30,7 @@ The following emojis are used to highlight certain changes:
 - [go-libp2p-kad-dht v0.35.1](https://github.com/libp2p/go-libp2p-kad-dht/releases/tag/v0.35.1)
 - [boxo v0.35.2](https://github.com/ipfs/boxo/releases/tag/v0.35.2)
 - [go-log/v2 v2.9.0](https://github.com/ipfs/go-log/releases/tag/v2.9.0)
+- CLI commands (`ask` subcommands) now default to `delegated-ipfs.dev` instead of `cid.contact` to ensure both IPNI and DHT results are returned without daemon running
 
 ### Removed
 
