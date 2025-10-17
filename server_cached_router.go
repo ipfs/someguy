@@ -38,11 +38,12 @@ const (
 	addrCacheStateHit    = "hit"
 	addrCacheStateMiss   = "miss"
 
-	// source=providers|peers indicates if query originated from provider or peer endpoint
-	addrQueryOriginLabel     = "origin"
-	addrQueryOriginProviders = "providers"
-	addrQueryOriginPeers     = "peers"
-	addrQueryOriginUnknown   = "unknown"
+	// source=providers|peers|closest indicates if query originated from provider, peer, or closest peers endpoint
+	addrQueryOriginLabel        = "origin"
+	addrQueryOriginProviders    = "providers"
+	addrQueryOriginPeers        = "peers"
+	addrQueryOriginClosestPeers = "closest"
+	addrQueryOriginUnknown      = "unknown"
 
 	DispatchedFindPeersTimeout = time.Minute
 )
@@ -64,7 +65,7 @@ func (r cachedRouter) FindProviders(ctx context.Context, key cid.Cid, limit int)
 		return nil, err
 	}
 
-	iter := NewCacheFallbackIter(it, r, ctx)
+	iter := NewCacheFallbackIter(it, r, ctx, addrQueryOriginProviders)
 	return iter, nil
 }
 
@@ -89,7 +90,39 @@ func (r cachedRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (it
 }
 
 func (r cachedRouter) GetClosestPeers(ctx context.Context, key cid.Cid) (iter.ResultIter[*types.PeerRecord], error) {
-	return r.router.GetClosestPeers(ctx, key)
+	it, err := r.router.GetClosestPeers(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+
+	return r.applyPeerRecordCaching(it, ctx, addrQueryOriginClosestPeers), nil
+}
+
+// applyPeerRecordCaching applies cache fallback logic to a PeerRecord iterator
+// by converting to Record iterator, applying caching, and converting back
+func (r cachedRouter) applyPeerRecordCaching(it iter.ResultIter[*types.PeerRecord], ctx context.Context, queryOrigin string) iter.ResultIter[*types.PeerRecord] {
+	// Convert *types.PeerRecord to types.Record
+	recordIter := iter.Map(it, func(v iter.Result[*types.PeerRecord]) iter.Result[types.Record] {
+		if v.Err != nil {
+			return iter.Result[types.Record]{Err: v.Err}
+		}
+		return iter.Result[types.Record]{Val: v.Val}
+	})
+
+	// Apply caching
+	cachedIter := NewCacheFallbackIter(recordIter, r, ctx, queryOrigin)
+
+	// Convert back to *types.PeerRecord
+	return iter.Map(cachedIter, func(v iter.Result[types.Record]) iter.Result[*types.PeerRecord] {
+		if v.Err != nil {
+			return iter.Result[*types.PeerRecord]{Err: v.Err}
+		}
+		peerRec, ok := v.Val.(*types.PeerRecord)
+		if !ok {
+			return iter.Result[*types.PeerRecord]{Err: errors.New("unexpected record type")}
+		}
+		return iter.Result[*types.PeerRecord]{Val: peerRec}
+	})
 }
 
 // withAddrsFromCache returns the best list of addrs for specified [peer.ID].
@@ -120,6 +153,7 @@ type cacheFallbackIter struct {
 	current         iter.Result[types.Record]
 	findPeersResult chan types.PeerRecord
 	router          cachedRouter
+	queryOrigin     string
 	ctx             context.Context
 	cancel          context.CancelFunc
 	ongoingLookups  atomic.Int32
@@ -127,13 +161,14 @@ type cacheFallbackIter struct {
 
 // NewCacheFallbackIter is a wrapper around a results iterator that will resolve peers with no addresses from cache and if no cached addresses, will look them up via FindPeers.
 // It's a bit complex because it ensures we continue iterating without blocking on the FindPeers call.
-func NewCacheFallbackIter(sourceIter iter.ResultIter[types.Record], router cachedRouter, ctx context.Context) *cacheFallbackIter {
+func NewCacheFallbackIter(sourceIter iter.ResultIter[types.Record], router cachedRouter, ctx context.Context, queryOrigin string) *cacheFallbackIter {
 	// Create a cancellable context for this iterator
 	iterCtx, cancel := context.WithCancel(ctx)
 
 	iter := &cacheFallbackIter{
 		sourceIter:      sourceIter,
 		router:          router,
+		queryOrigin:     queryOrigin,
 		ctx:             iterCtx,
 		cancel:          cancel,
 		findPeersResult: make(chan types.PeerRecord, 100), // Buffer to avoid drops in typical cases
@@ -152,7 +187,7 @@ func (it *cacheFallbackIter) Next() bool {
 			switch val.Val.GetSchema() {
 			case types.SchemaPeer:
 				if record, ok := val.Val.(*types.PeerRecord); ok {
-					record.Addrs = it.router.withAddrsFromCache(addrQueryOriginProviders, *record.ID, record.Addrs)
+					record.Addrs = it.router.withAddrsFromCache(it.queryOrigin, *record.ID, record.Addrs)
 					if len(record.Addrs) > 0 {
 						it.current = iter.Result[types.Record]{Val: record}
 						return true
