@@ -168,6 +168,11 @@ func start(ctx context.Context, cfg *config) error {
 		return err
 	}
 
+	dhtRouters, err := getCombinedRouting(nil, h, dhtRouting, cachedAddrBook, nil)
+	if err != nil {
+		return err
+	}
+
 	_, port, err := net.SplitHostPort(cfg.listenAddress)
 	if err != nil {
 		return err
@@ -190,6 +195,7 @@ func start(ctx context.Context, cfg *config) error {
 		providers: crRouters,
 		peers:     prRouters,
 		ipns:      ipnsRouters,
+		dht:       dhtRouters,
 	}, handlerOpts...)
 
 	// Add CORS.
