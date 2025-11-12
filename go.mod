@@ -9,10 +9,10 @@ require (
 	github.com/dustin/go-humanize v1.0.1
 	github.com/felixge/httpsnoop v1.0.4
 	github.com/hashicorp/golang-lru/v2 v2.0.7
-	github.com/ipfs/boxo v0.35.1
+	github.com/ipfs/boxo v0.35.2
 	github.com/ipfs/go-cid v0.5.0
-	github.com/ipfs/go-log/v2 v2.8.2
-	github.com/libp2p/go-libp2p v0.43.0
+	github.com/ipfs/go-log/v2 v2.9.0
+	github.com/libp2p/go-libp2p v0.45.0
 	github.com/libp2p/go-libp2p-kad-dht v0.35.1
 	github.com/libp2p/go-libp2p-record v0.3.1
 	github.com/multiformats/go-multiaddr v0.16.1
@@ -29,7 +29,7 @@ require (
 	go.opentelemetry.io/otel v1.38.0
 	go.opentelemetry.io/otel/sdk v1.38.0
 	go.opentelemetry.io/otel/trace v1.38.0
-	golang.org/x/sys v0.37.0
+	golang.org/x/sys v0.38.0
 )
 
 require (
@@ -146,7 +146,7 @@ require (
 	go.uber.org/zap v1.27.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	golang.org/x/crypto v0.43.0 // indirect
-	golang.org/x/exp v0.0.0-20251009144603-d2f985daa21b // indirect
+	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
 	golang.org/x/mod v0.29.0 // indirect
 	golang.org/x/net v0.46.0 // indirect
 	golang.org/x/sync v0.17.0 // indirect
