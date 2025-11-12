@@ -44,7 +44,7 @@ func init() {
 
 	// Wire go-log's slog bridge to go-libp2p's gologshim.
 	// This provides go-libp2p loggers with the "logger" attribute
-	// for per-subsystem level control (e.g., `ipfs log level libp2p-swarm debug`).
+	// for per-subsystem level control.
 	gologshim.SetDefaultHandler(logging.SlogHandler())
 
 	// setup opencensus -> prometheus forwarding for delegated routing metrics
