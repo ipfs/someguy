@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -12,9 +13,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
-	"github.com/libp2p/go-libp2p/core/peer"
-	"go.opencensus.io/stats/view"
 
 	ocprom "contrib.go.opencensus.io/exporter/prometheus"
 	"github.com/CAFxX/httpcompression"
@@ -26,18 +24,30 @@ import (
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/routing"
+	"github.com/libp2p/go-libp2p/gologshim"
 	"github.com/libp2p/go-libp2p/p2p/net/connmgr"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
+	"go.opencensus.io/stats/view"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 var logger = logging.Logger(name)
 
-// setup opencensus -> prometheus forwarding for delegated routing metrics
 func init() {
+	// Set go-log's slog handler as the application-wide default.
+	// This ensures all slog-based logging uses go-log's formatting.
+	slog.SetDefault(slog.New(logging.SlogHandler()))
+
+	// Wire go-log's slog bridge to go-libp2p's gologshim.
+	// This provides go-libp2p loggers with the "logger" attribute
+	// for per-subsystem level control (e.g., `ipfs log level libp2p-swarm debug`).
+	gologshim.SetDefaultHandler(logging.SlogHandler())
+
+	// setup opencensus -> prometheus forwarding for delegated routing metrics
 	promRegistry, ok := prometheus.DefaultRegisterer.(*prometheus.Registry)
 	if !ok {
 		logger.Error("delegated routing metrics: error casting DefaultRegisterer")
