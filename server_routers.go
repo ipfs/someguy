@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"sync"
 	"time"
@@ -376,35 +377,38 @@ func (d libp2pRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (it
 func (d libp2pRouter) GetClosestPeers(ctx context.Context, key cid.Cid) (iter.ResultIter[*types.PeerRecord], error) {
 	// Per the spec, if the peer ID is empty, we should use self.
 	if key == cid.Undef {
-		key = peer.ToCid(d.host.ID())
+		return nil, errors.New("GetClosestPeers: key is undefined")
 	}
 
 	keyStr := string(key.Hash())
 	var peers []peer.ID
 	var err error
 
-	switch v := d.routing.(type) {
+	switch dhtClient := d.routing.(type) {
 	case *dual.DHT:
-		// Only use WAN DHT for public HTTP Routing API.
+		// Only use WAN DHT for public HTTP Routing API (same as Kubo)
 		// LAN DHT contains private network peers that should not be exposed publicly.
-		peers, err = v.WAN.GetClosestPeers(ctx, keyStr)
+		if dhtClient.WAN == nil {
+			return nil, fmt.Errorf("GetClosestPeers not supported: WAN DHT is not available")
+		}
+		peers, err = dhtClient.WAN.GetClosestPeers(ctx, keyStr)
 		if err != nil {
 			return nil, err
 		}
 	case *fullrt.FullRT:
-		peers, err = v.GetClosestPeers(ctx, keyStr)
+		peers, err = dhtClient.GetClosestPeers(ctx, keyStr)
 		if err != nil {
 			return nil, err
 		}
 	case *dht.IpfsDHT:
-		peers, err = v.GetClosestPeers(ctx, keyStr)
+		peers, err = dhtClient.GetClosestPeers(ctx, keyStr)
 		if err != nil {
 			return nil, err
 		}
 	case *bundledDHT:
 		// bundledDHT uses either fullRT (when ready) or standard DHT
 		// We need to call GetClosestPeers on the active DHT
-		activeDHT := v.getDHT()
+		activeDHT := dhtClient.getDHT()
 		switch dht := activeDHT.(type) {
 		case *fullrt.FullRT:
 			peers, err = dht.GetClosestPeers(ctx, keyStr)
