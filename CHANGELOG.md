@@ -15,12 +15,19 @@ The following emojis are used to highlight certain changes:
 
 ### Added
 
+- Added `/routing/v1/peers/closest/{key}` endpoint implementing [IPIP-476](https://github.com/ipfs/specs/pull/476)
+  - Returns DHT-closest peers to a given CID or PeerID
+  - Accepts both CID and legacy PeerID formats (e.g., `12D3KooW...`)
+  - Uses WAN DHT only for more reliable results
+  - Includes cached addresses in results when available
+
 ### Changed
 
 - [go-libp2p v0.45.0](https://github.com/libp2p/go-libp2p/releases/tag/v0.45.0)
 - [go-libp2p-kad-dht v0.35.1](https://github.com/libp2p/go-libp2p-kad-dht/releases/tag/v0.35.1)
 - [boxo v0.35.2](https://github.com/ipfs/boxo/releases/tag/v0.35.2)
 - [go-log/v2 v2.9.0](https://github.com/ipfs/go-log/releases/tag/v2.9.0)
+- CLI commands (`ask` subcommands) now default to `delegated-ipfs.dev` instead of `cid.contact` to ensure both IPNI and DHT results are returned without daemon running
 
 ### Removed
 

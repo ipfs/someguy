@@ -9,7 +9,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1
 	github.com/felixge/httpsnoop v1.0.4
 	github.com/hashicorp/golang-lru/v2 v2.0.7
-	github.com/ipfs/boxo v0.35.2
+	github.com/ipfs/boxo v0.35.3-0.20251112034801-918fee9e707f
 	github.com/ipfs/go-cid v0.5.0
 	github.com/ipfs/go-log/v2 v2.9.0
 	github.com/libp2p/go-libp2p v0.45.0
@@ -70,7 +70,7 @@ require (
 	github.com/libp2p/go-flow-metrics v0.3.0 // indirect
 	github.com/libp2p/go-libp2p-asn-util v0.4.1 // indirect
 	github.com/libp2p/go-libp2p-kbucket v0.8.0 // indirect
-	github.com/libp2p/go-libp2p-routing-helpers v0.7.5 // indirect
+	github.com/libp2p/go-libp2p-routing-helpers v0.7.6-0.20251016083611-f098f492895e // indirect
 	github.com/libp2p/go-libp2p-xor v0.1.0 // indirect
 	github.com/libp2p/go-msgio v0.3.0 // indirect
 	github.com/libp2p/go-netroute v0.3.0 // indirect
