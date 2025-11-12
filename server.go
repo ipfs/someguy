@@ -97,6 +97,8 @@ type config struct {
 
 	tracingAuth      string
 	samplingFraction float64
+
+	autoConf autoConfConfig
 }
 
 func start(ctx context.Context, cfg *config) error {
@@ -105,17 +107,27 @@ func start(ctx context.Context, cfg *config) error {
 		return err
 	}
 
+	autoConf, err := startAutoConf(ctx, cfg)
+	if err != nil {
+		logger.Error(err.Error())
+	}
+
+	bootstrapAddrInfos := getBootstrapPeerAddrInfos(cfg, autoConf)
+	if err = expandContentEndpoints(cfg, autoConf); err != nil {
+		return err
+	}
+
 	fmt.Printf("Someguy libp2p host listening on %v\n", h.Addrs())
 	var dhtRouting routing.Routing
 	switch cfg.dhtType {
 	case "accelerated":
-		wrappedDHT, err := newBundledDHT(ctx, h)
+		wrappedDHT, err := newBundledDHT(ctx, h, bootstrapAddrInfos)
 		if err != nil {
 			return err
 		}
 		dhtRouting = wrappedDHT
 	case "standard":
-		standardDHT, err := dht.New(ctx, h, dht.Mode(dht.ModeClient), dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...))
+		standardDHT, err := dht.New(ctx, h, dht.Mode(dht.ModeClient), dht.BootstrapPeers(bootstrapAddrInfos...))
 		if err != nil {
 			return err
 		}
