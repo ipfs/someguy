@@ -136,6 +136,7 @@ func createAutoConfClient(config autoConfConfig) (*autoconf.Client, error) {
 		autoconf.WithTimeout(autoconf.DefaultTimeout),
 		autoconf.WithURL(config.url),
 		autoconf.WithRefreshInterval(config.refreshInterval),
+		autoconf.WithFallback(autoconf.GetMainnetFallbackConfig),
 	)
 }
 
