@@ -73,7 +73,7 @@ This feature can be configured via:
 - `--autoconf-refresh` / `SOMEGUY_AUTOCONF_REFRESH`: How often to refresh configuration (default: `24h`)
 
 The `auto` placeholder can be used in:
-- `--endpoing` / `SOMEGUY_DELEGATED_ENDPOINT`: the Delegated Routing V1 endpoint to ask
+- `--endpoint` / `SOMEGUY_DELEGATED_ENDPOINT`: the Delegated Routing V1 endpoint to ask
 
 **Note:** When autoconf is disabled (`--autoconf=false`), using the `auto` placeholder will cause an error. You must provide explicit values for these configurations when autoconf is disabled.
 
