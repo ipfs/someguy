@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/ipfs/boxo/autoconf"
-	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 )
@@ -55,8 +54,8 @@ func getBootstrapPeerAddrInfos(cfg *config, autoConf *autoconf.Config) []peer.Ad
 		nativeSystems := getNativeSystems(cfg.dhtType)
 		return stringsToPeerAddrInfos(autoConf.GetBootstrapPeers(nativeSystems...))
 	}
-	// Fallback to hard-coded bootstrappers.
-	return dht.GetDefaultBootstrapPeerAddrInfos()
+	// Fallback to autoconf fallback bootstrappers.
+	return stringsToPeerAddrInfos(autoconf.FallbackBootstrapPeers)
 }
 
 func expandContentEndpoints(cfg *config, autoConf *autoconf.Config) error {
