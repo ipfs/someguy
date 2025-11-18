@@ -18,7 +18,6 @@ import (
 	"github.com/CAFxX/httpcompression"
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
 	"github.com/felixge/httpsnoop"
-	drclient "github.com/ipfs/boxo/routing/http/client"
 	"github.com/ipfs/boxo/routing/http/server"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p"
@@ -188,20 +187,16 @@ func start(ctx context.Context, cfg *config) error {
 		}
 	}
 
-	crRouters, err := getCombinedRouting(cfg.contentEndpoints, dhtRouting, cachedAddrBook, blockProviderRouters)
+	// Create deduplicated HTTP routers - one client per unique base URL
+	providerHTTPRouters, peerHTTPRouters, ipnsHTTPRouters, err := createDelegatedHTTPRouters(cfg)
 	if err != nil {
 		return err
 	}
 
-	prRouters, err := getCombinedRouting(cfg.peerEndpoints, dhtRouting, cachedAddrBook, nil)
-	if err != nil {
-		return err
-	}
-
-	ipnsRouters, err := getCombinedRouting(cfg.ipnsEndpoints, dhtRouting, cachedAddrBook, nil)
-	if err != nil {
-		return err
-	}
+	// Combine HTTP routers with DHT and additional routers
+	crRouters := combineRouters(dhtRouting, cachedAddrBook, providerHTTPRouters, blockProviderRouters)
+	prRouters := combineRouters(dhtRouting, cachedAddrBook, peerHTTPRouters, nil)
+	ipnsRouters := combineRouters(dhtRouting, cachedAddrBook, ipnsHTTPRouters, nil)
 
 	_, port, err := net.SplitHostPort(cfg.listenAddress)
 	if err != nil {
@@ -328,7 +323,9 @@ func newHost(cfg *config) (host.Host, error) {
 	return h, nil
 }
 
-func getCombinedRouting(endpoints []string, dht routing.Routing, cachedAddrBook *cachedAddrBook, additionalRouters []router) (router, error) {
+// combineRouters combines delegated HTTP routers with DHT and additional routers.
+// It no longer creates HTTP clients (that's done in createDelegatedHTTPRouters).
+func combineRouters(dht routing.Routing, cachedAddrBook *cachedAddrBook, delegatedRouters, additionalRouters []router) router {
 	var dhtRouter router
 
 	if cachedAddrBook != nil {
@@ -338,31 +335,11 @@ func getCombinedRouting(endpoints []string, dht routing.Routing, cachedAddrBook 
 		dhtRouter = sanitizeRouter{libp2pRouter{routing: dht}}
 	}
 
-	if len(endpoints) == 0 && len(additionalRouters) == 0 {
+	if len(delegatedRouters) == 0 && len(additionalRouters) == 0 {
 		if dhtRouter == nil {
-			return composableRouter{}, nil
+			return composableRouter{}
 		}
-		return dhtRouter, nil
-	}
-
-	var delegatedRouters []router
-
-	for _, endpoint := range endpoints {
-		drclient, err := drclient.New(endpoint,
-			drclient.WithUserAgent("someguy/"+buildVersion()),
-			// override default filters, we want all results from remote endpoint, then someguy's user can use IPIP-484 to narrow them down
-			drclient.WithProtocolFilter([]string{}),
-			drclient.WithDisabledLocalFiltering(true),
-		)
-		if err != nil {
-			return nil, err
-		}
-		delegatedRouters = append(delegatedRouters, clientRouter{Client: drclient})
-	}
-
-	// setup delegated routing client metrics
-	if err := view.Register(drclient.OpenCensusViews...); err != nil {
-		return nil, fmt.Errorf("registering HTTP delegated routing views: %w", err)
+		return dhtRouter
 	}
 
 	var routers []router
@@ -374,7 +351,7 @@ func getCombinedRouting(endpoints []string, dht routing.Routing, cachedAddrBook 
 
 	return parallelRouter{
 		routers: routers,
-	}, nil
+	}
 }
 
 func withTracingAndDebug(next http.Handler, authToken string) http.Handler {
