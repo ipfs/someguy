@@ -79,13 +79,13 @@ func main() {
 					},
 					&cli.StringSliceFlag{
 						Name:    "peer-endpoints",
-						Value:   cli.NewStringSlice(),
+						Value:   cli.NewStringSlice(autoconf.AutoPlaceholder),
 						EnvVars: []string{"SOMEGUY_PEER_ENDPOINTS"},
 						Usage:   "other Delegated Routing V1 endpoints to proxy peer requests to",
 					},
 					&cli.StringSliceFlag{
 						Name:    "ipns-endpoints",
-						Value:   cli.NewStringSlice(),
+						Value:   cli.NewStringSlice(autoconf.AutoPlaceholder),
 						EnvVars: []string{"SOMEGUY_IPNS_ENDPOINTS"},
 						Usage:   "other Delegated Routing V1 endpoints to proxy IPNS requests to",
 					},
@@ -239,10 +239,9 @@ func main() {
 				Name: "ask",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
-						Name:    "endpoint",
-						Value:   autoconf.AutoPlaceholder,
-						EnvVars: []string{"SOMEGUY_DELEGATED_ENDPOINT"},
-						Usage:   "the Delegated Routing V1 endpoint to ask",
+						Name:  "endpoint",
+						Value: autoconf.AutoPlaceholder,
+						Usage: "the Delegated Routing V1 endpoint to ask",
 					},
 					&cli.BoolFlag{
 						Name:  "pretty",
@@ -305,7 +304,7 @@ func main() {
 								logger.Error(err.Error())
 							}
 
-							if err = expandContentEndpoints(cfg, autoConf); err != nil {
+							if err = expandDelegatedRoutingEndpoints(cfg, autoConf); err != nil {
 								return err
 							}
 							if len(cfg.contentEndpoints) == 0 {
@@ -347,7 +346,7 @@ func main() {
 								logger.Error(err.Error())
 							}
 
-							if err = expandContentEndpoints(cfg, autoConf); err != nil {
+							if err = expandDelegatedRoutingEndpoints(cfg, autoConf); err != nil {
 								return err
 							}
 							if len(cfg.contentEndpoints) == 0 {

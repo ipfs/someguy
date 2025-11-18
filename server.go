@@ -113,8 +113,21 @@ func start(ctx context.Context, cfg *config) error {
 	}
 
 	bootstrapAddrInfos := getBootstrapPeerAddrInfos(cfg, autoConf)
-	if err = expandContentEndpoints(cfg, autoConf); err != nil {
+
+	// Expand delegated routing endpoints and categorize by path
+	if err = expandDelegatedRoutingEndpoints(cfg, autoConf); err != nil {
 		return err
+	}
+
+	// Print delegated routing endpoints
+	if len(cfg.contentEndpoints) > 0 {
+		fmt.Printf("Delegated routing endpoints for /routing/v1/providers: %v\n", cfg.contentEndpoints)
+	}
+	if len(cfg.peerEndpoints) > 0 {
+		fmt.Printf("Delegated routing endpoints for /routing/v1/peers: %v\n", cfg.peerEndpoints)
+	}
+	if len(cfg.ipnsEndpoints) > 0 {
+		fmt.Printf("Delegated routing endpoints for /routing/v1/ipns: %v\n", cfg.ipnsEndpoints)
 	}
 
 	fmt.Printf("Someguy libp2p host listening on %v\n", h.Addrs())

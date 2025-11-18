@@ -15,13 +15,9 @@ The following emojis are used to highlight certain changes:
 
 ### Added
 
-- Added automatic configuration (autoconf) of bootstrap nodes and delegated routing endpoints. Autoconf can be disabled and autoconf endpoints can be manually supplied to provide alternate configuration data. Delegated routing endpoints can also be manually supplied, overriding auto-configured values.
-- AutoConf support with `auto` placeholders for bootstrap peers and delegated routing endpoints ([Autoconf #123](https://github.com/ipfs/someguy/pull/123))
-  - Configuration flags:
-    - `--autoconf` / `SOMEGUY_AUTOCONF`: Enable/disable automatic configuration expansion (default: `true`)
-    - `--autoconf-url` / `SOMEGUY_AUTOCONF_URL`: URL to fetch autoconf data from (default: `https://conf.ipfs-mainnet.org/autoconf.json`)
-    - `--autoconf-refresh` / `SOMEGUY_AUTOCONF_REFRESH`: Interval for refreshing autoconf data (default: `24h`)
-  - When autoconf is disabled, `auto` placeholders will cause an error, requiring explicit values
+- AutoConf support: automatic configuration of bootstrap peers and delegated routing endpoints ([#123](https://github.com/ipfs/someguy/pull/123)). When enabled (default), the `auto` placeholder is replaced with network-recommended values.
+  - All endpoint flags (`--provider-endpoints`, `--peer-endpoints`, `--ipns-endpoints`) default to `auto`
+  - See [environment-variables.md](docs/environment-variables.md#someguy_autoconf) for configuration details
 
 ### Changed
 

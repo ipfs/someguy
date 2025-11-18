@@ -60,33 +60,205 @@ func TestGetNativeSystems(t *testing.T) {
 	}
 }
 
-// TestExpandContentEndpoints verifies endpoint expansion behavior when autoconf is disabled
-func TestExpandContentEndpoints(t *testing.T) {
-	cfg := config{
-		autoConf: autoConfConfig{
-			enabled: false,
-		},
-		contentEndpoints: []string{autoconf.AutoPlaceholder},
-	}
-
+// TestExpandDelegatedRoutingEndpoints verifies endpoint expansion and path categorization
+func TestExpandDelegatedRoutingEndpoints(t *testing.T) {
 	t.Run("auto placeholder errors when autoconf disabled", func(t *testing.T) {
-		err := expandContentEndpoints(&cfg, nil)
+		cfg := config{
+			autoConf: autoConfConfig{
+				enabled: false,
+			},
+			contentEndpoints: []string{autoconf.AutoPlaceholder},
+		}
+		err := expandDelegatedRoutingEndpoints(&cfg, nil)
 		require.Error(t, err, "should error when 'auto' is used with autoconf disabled")
-		assert.Contains(t, err.Error(), "'auto' placeholder found in endpoint option", "error should mention bootstrap peers")
-		assert.Contains(t, err.Error(), "SOMEGUY_DELEGATED_ENDPOINT", "error should mention how to fix")
+		assert.Contains(t, err.Error(), "'auto' placeholder found in endpoint option")
+		assert.Contains(t, err.Error(), "SOMEGUY_PROVIDER_ENDPOINTS")
 	})
 
-	t.Run("custom endpoint preserved when autoconf disabled", func(t *testing.T) {
-		custom := []string{"https://example.com"}
-		cfg.contentEndpoints = custom
-		err := expandContentEndpoints(&cfg, nil)
-		require.NoError(t, err, "custom endpoint should not error")
-		assert.Equal(t, custom, cfg.contentEndpoints, "custom endpoint should be preserved")
+	t.Run("custom endpoints without paths preserved", func(t *testing.T) {
+		cfg := config{
+			autoConf: autoConfConfig{
+				enabled: false,
+			},
+			contentEndpoints: []string{"https://example.com"},
+		}
+		err := expandDelegatedRoutingEndpoints(&cfg, nil)
+		require.NoError(t, err)
+		// Without autoconf, endpoints pass through unchanged
+		assert.Equal(t, []string{"https://example.com"}, cfg.contentEndpoints)
 	})
 
-	t.Run("mixed auto and custom errors when autoconf disabled", func(t *testing.T) {
-		cfg.contentEndpoints = []string{autoconf.AutoPlaceholder, "https://example.com"}
-		err := expandContentEndpoints(&cfg, nil)
-		require.Error(t, err, "should error when 'auto' is mixed with custom values")
+	t.Run("separate flags with matching paths", func(t *testing.T) {
+		cfg := config{
+			autoConf: autoConfConfig{
+				enabled: true,
+			},
+			dhtType: "none", // no native systems to exclude
+			contentEndpoints: []string{
+				"https://provider-only.example.com/routing/v1/providers",
+				"https://all-in-one.example.com/routing/v1/providers",
+			},
+			peerEndpoints: []string{
+				"https://peer-only.example.com/routing/v1/peers",
+				"https://all-in-one.example.com/routing/v1/peers",
+			},
+			ipnsEndpoints: []string{
+				"https://ipns-only.example.com/routing/v1/ipns",
+				"https://all-in-one.example.com/routing/v1/ipns",
+			},
+		}
+
+		mockAutoConf := &autoconf.Config{}
+		err := expandDelegatedRoutingEndpoints(&cfg, mockAutoConf)
+		require.NoError(t, err)
+
+		// Verify paths stripped to base URLs
+		assert.ElementsMatch(t, []string{
+			"https://all-in-one.example.com",
+			"https://provider-only.example.com",
+		}, cfg.contentEndpoints, "provider endpoints should have paths stripped")
+
+		assert.ElementsMatch(t, []string{
+			"https://all-in-one.example.com",
+			"https://peer-only.example.com",
+		}, cfg.peerEndpoints, "peer endpoints should have paths stripped")
+
+		assert.ElementsMatch(t, []string{
+			"https://all-in-one.example.com",
+			"https://ipns-only.example.com",
+		}, cfg.ipnsEndpoints, "IPNS endpoints should have paths stripped")
+	})
+
+	t.Run("base URLs and unknown paths accepted", func(t *testing.T) {
+		cfg := config{
+			autoConf: autoConfConfig{
+				enabled: true,
+			},
+			dhtType: "none",
+			contentEndpoints: []string{
+				"https://example.com/routing/v1/providers",
+				"https://example.com/custom/path",
+				"https://example.com",
+			},
+		}
+
+		mockAutoConf := &autoconf.Config{}
+		err := expandDelegatedRoutingEndpoints(&cfg, mockAutoConf)
+		require.NoError(t, err)
+
+		// All URLs accepted: known path stripped, unknown path and base URL kept
+		assert.ElementsMatch(t, []string{
+			"https://example.com",
+			"https://example.com/custom/path",
+		}, cfg.contentEndpoints)
+		assert.Empty(t, cfg.peerEndpoints)
+		assert.Empty(t, cfg.ipnsEndpoints)
+	})
+
+	t.Run("deduplication works", func(t *testing.T) {
+		cfg := config{
+			autoConf: autoConfConfig{
+				enabled: true,
+			},
+			dhtType: "none",
+			contentEndpoints: []string{
+				"https://example.com/routing/v1/providers",
+				"https://example.com/routing/v1/providers", // duplicate
+				"https://example.com",                      // duplicate after path stripping
+			},
+			peerEndpoints: []string{
+				"https://example.com/routing/v1/peers",
+				"https://example.com", // duplicate after path stripping
+			},
+		}
+
+		mockAutoConf := &autoconf.Config{}
+		err := expandDelegatedRoutingEndpoints(&cfg, mockAutoConf)
+		require.NoError(t, err)
+
+		// Duplicates removed, paths stripped
+		assert.Equal(t, []string{"https://example.com"}, cfg.contentEndpoints)
+		assert.Equal(t, []string{"https://example.com"}, cfg.peerEndpoints)
+	})
+
+	t.Run("mismatched path errors", func(t *testing.T) {
+		cfg := config{
+			autoConf: autoConfConfig{
+				enabled: true,
+			},
+			dhtType: "none",
+			contentEndpoints: []string{
+				"https://example.com/routing/v1/peers", // wrong path for provider endpoints
+			},
+		}
+
+		mockAutoConf := &autoconf.Config{}
+		err := expandDelegatedRoutingEndpoints(&cfg, mockAutoConf)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "/routing/v1/peers")
+		assert.Contains(t, err.Error(), "--provider-endpoints")
+	})
+
+	t.Run("mixing auto with custom URLs", func(t *testing.T) {
+		cfg := config{
+			autoConf: autoConfConfig{
+				enabled: true,
+			},
+			dhtType: "none",
+			contentEndpoints: []string{
+				autoconf.AutoPlaceholder,
+				"https://custom-provider.example.com",
+			},
+			peerEndpoints: []string{
+				"https://custom-peer.example.com",
+			},
+			ipnsEndpoints: []string{
+				autoconf.AutoPlaceholder,
+			},
+		}
+
+		// Empty autoConf means "auto" expands to nothing, custom URLs preserved
+		mockAutoConf := &autoconf.Config{}
+		err := expandDelegatedRoutingEndpoints(&cfg, mockAutoConf)
+		require.NoError(t, err)
+
+		// Custom URLs should be preserved
+		assert.Equal(t, []string{"https://custom-provider.example.com"}, cfg.contentEndpoints)
+		assert.Equal(t, []string{"https://custom-peer.example.com"}, cfg.peerEndpoints)
+		assert.Empty(t, cfg.ipnsEndpoints) // auto expanded to nothing
+	})
+
+	t.Run("multiple custom URLs in one flag", func(t *testing.T) {
+		cfg := config{
+			autoConf: autoConfConfig{
+				enabled: true,
+			},
+			dhtType: "none",
+			contentEndpoints: []string{
+				"https://a.example.com",
+				"https://b.example.com/routing/v1/providers",
+				"https://c.example.com",
+			},
+			peerEndpoints: []string{
+				"https://peer1.example.com/routing/v1/peers",
+				"https://peer2.example.com",
+			},
+		}
+
+		mockAutoConf := &autoconf.Config{}
+		err := expandDelegatedRoutingEndpoints(&cfg, mockAutoConf)
+		require.NoError(t, err)
+
+		// All URLs should be processed (paths stripped where present)
+		assert.ElementsMatch(t, []string{
+			"https://a.example.com",
+			"https://b.example.com",
+			"https://c.example.com",
+		}, cfg.contentEndpoints)
+
+		assert.ElementsMatch(t, []string{
+			"https://peer1.example.com",
+			"https://peer2.example.com",
+		}, cfg.peerEndpoints)
 	})
 }

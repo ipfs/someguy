@@ -65,17 +65,24 @@ For more details run `someguy ask --help`.
 
 ### AutoConf
 
-Someguy supports automatic configuration of bootstrap peers and delegated routing endpoints through the autoconf feature. When enabled (default), Someguy will fetch configuration from a remote URL and automatically expand the special `auto` placeholder value with network-appropriate defaults.
+Automatic configuration of bootstrap peers and delegated routing endpoints. When enabled (default), the `auto` placeholder is replaced with network-recommended values fetched from a remote URL.
 
-This feature can be configured via:
-- `--autoconf` / `SOMEGUY_AUTOCONF`: Enable/disable autoconf (default: `true`)
-- `--autoconf-url` / `SOMEGUY_AUTOCONF_URL`: URL to fetch configuration from (default: `https://conf.ipfs-mainnet.org/autoconf.json`)
-- `--autoconf-refresh` / `SOMEGUY_AUTOCONF_REFRESH`: How often to refresh configuration (default: `24h`)
+Configuration:
+- `--autoconf` / [`SOMEGUY_AUTOCONF`](docs/environment-variables.md#someguy_autoconf)
+- `--autoconf-url` / [`SOMEGUY_AUTOCONF_URL`](docs/environment-variables.md#someguy_autoconf_url)
+- `--autoconf-refresh` / [`SOMEGUY_AUTOCONF_REFRESH`](docs/environment-variables.md#someguy_autoconf_refresh)
 
-The `auto` placeholder can be used in:
-- `--endpoint` / `SOMEGUY_DELEGATED_ENDPOINT`: the Delegated Routing V1 endpoint to ask
+Endpoint flags (default to `auto`):
+- `--provider-endpoints` / [`SOMEGUY_PROVIDER_ENDPOINTS`](docs/environment-variables.md#someguy_provider_endpoints)
+- `--peer-endpoints` / [`SOMEGUY_PEER_ENDPOINTS`](docs/environment-variables.md#someguy_peer_endpoints)
+- `--ipns-endpoints` / [`SOMEGUY_IPNS_ENDPOINTS`](docs/environment-variables.md#someguy_ipns_endpoints)
 
-**Note:** When autoconf is disabled (`--autoconf=false`), using the `auto` placeholder will cause an error. You must provide explicit values for these configurations when autoconf is disabled.
+To use custom endpoints instead of `auto`:
+```bash
+someguy start --ipns-endpoints https://example.com
+```
+
+See [environment-variables.md](docs/environment-variables.md) for URL formats and configuration details.
 
 ## Deployment
 

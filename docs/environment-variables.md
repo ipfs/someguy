@@ -11,6 +11,9 @@
   - [`SOMEGUY_PROVIDER_ENDPOINTS`](#someguy_provider_endpoints)
   - [`SOMEGUY_PEER_ENDPOINTS`](#someguy_peer_endpoints)
   - [`SOMEGUY_IPNS_ENDPOINTS`](#someguy_ipns_endpoints)
+  - [`SOMEGUY_AUTOCONF`](#someguy_autoconf)
+  - [`SOMEGUY_AUTOCONF_URL`](#someguy_autoconf_url)
+  - [`SOMEGUY_AUTOCONF_REFRESH`](#someguy_autoconf_refresh)
   - [`SOMEGUY_HTTP_BLOCK_PROVIDER_ENDPOINTS`](#someguy_http_block_provider_endpoints)
   - [`SOMEGUY_HTTP_BLOCK_PROVIDER_PEERIDS`](#someguy_http_block_provider_peerids)
   - [`SOMEGUY_LIBP2P_LISTEN_ADDRS`](#someguy_libp2p_listen_addrs)
@@ -62,21 +65,51 @@ Default: `true`
 
 ### `SOMEGUY_PROVIDER_ENDPOINTS`
 
-Comma-separated list of other Delegated Routing V1 endpoints to proxy provider requests to.
+Comma-separated list of [Delegated Routing V1](https://specs.ipfs.tech/routing/http-routing-v1/) endpoints for provider lookups.
 
-Default: `https://cid.contact`
+Supports two URL formats:
+- Base URL without path: `https://example.com`
+- Full URL with path: `https://example.com/routing/v1/providers`
+
+When using the `auto` placeholder (default), endpoints are automatically configured from the network configuration at [`SOMEGUY_AUTOCONF_URL`](#someguy_autoconf_url).
+
+Default: `auto`
 
 ### `SOMEGUY_PEER_ENDPOINTS`
 
-Comma-separated list of other Delegated Routing V1 endpoints to proxy peer requests to.
+Comma-separated list of Delegated Routing V1 endpoints for peer routing.
 
-Default: none
+URL formats: same as [`SOMEGUY_PROVIDER_ENDPOINTS`](#someguy_provider_endpoints) (use `/routing/v1/peers` path).
+
+Default: `auto`
 
 ### `SOMEGUY_IPNS_ENDPOINTS`
 
-Comma-separated list of other Delegated Routing V1 endpoints to proxy IPNS requests to.
+Comma-separated list of Delegated Routing V1 endpoints for IPNS records.
 
-Default: none
+URL formats: same as [`SOMEGUY_PROVIDER_ENDPOINTS`](#someguy_provider_endpoints) (use `/routing/v1/ipns` path).
+
+Default: `auto`
+
+###  `SOMEGUY_AUTOCONF`
+
+Enable or disable automatic configuration (autoconf) of delegated routing endpoints and bootstrap peers.
+
+When enabled, the `auto` placeholder in endpoint configuration is replaced with network-recommended values fetched from the autoconf URL.
+
+Default: `true`
+
+### `SOMEGUY_AUTOCONF_URL`
+
+URL to fetch autoconf data from. Defaults to the service that provides configuration for [IPFS Mainnet](https://docs.ipfs.tech/concepts/glossary/#mainnet).
+
+Default: `https://conf.ipfs-mainnet.org/autoconf.json`
+
+### `SOMEGUY_AUTOCONF_REFRESH`
+
+How often to refresh the autoconf data. The configuration is cached and updated at this interval.
+
+Default: `24h`
 
 ### `SOMEGUY_HTTP_BLOCK_PROVIDER_ENDPOINTS`
 
