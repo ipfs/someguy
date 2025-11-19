@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"sync"
 	"time"
@@ -12,6 +13,10 @@ import (
 	"github.com/ipfs/boxo/routing/http/types"
 	"github.com/ipfs/boxo/routing/http/types/iter"
 	"github.com/ipfs/go-cid"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
+	"github.com/libp2p/go-libp2p-kad-dht/dual"
+	"github.com/libp2p/go-libp2p-kad-dht/fullrt"
+	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/routing"
 	manet "github.com/multiformats/go-multiaddr/net"
@@ -21,6 +26,7 @@ type router interface {
 	providersRouter
 	peersRouter
 	ipnsRouter
+	dhtRouter
 }
 
 type providersRouter interface {
@@ -36,12 +42,17 @@ type ipnsRouter interface {
 	PutIPNS(ctx context.Context, name ipns.Name, record *ipns.Record) error
 }
 
+type dhtRouter interface {
+	GetClosestPeers(ctx context.Context, key cid.Cid) (iter.ResultIter[*types.PeerRecord], error)
+}
+
 var _ server.ContentRouter = composableRouter{}
 
 type composableRouter struct {
 	providers providersRouter
 	peers     peersRouter
 	ipns      ipnsRouter
+	dht       dhtRouter
 }
 
 func (r composableRouter) FindProviders(ctx context.Context, key cid.Cid, limit int) (iter.ResultIter[types.Record], error) {
@@ -56,6 +67,13 @@ func (r composableRouter) FindPeers(ctx context.Context, pid peer.ID, limit int)
 		return iter.ToResultIter(iter.FromSlice([]*types.PeerRecord{})), nil
 	}
 	return r.peers.FindPeers(ctx, pid, limit)
+}
+
+func (r composableRouter) GetClosestPeers(ctx context.Context, key cid.Cid) (iter.ResultIter[*types.PeerRecord], error) {
+	if r.dht == nil {
+		return iter.ToResultIter(iter.FromSlice([]*types.PeerRecord{})), nil
+	}
+	return r.dht.GetClosestPeers(ctx, key)
 }
 
 func (r composableRouter) GetIPNS(ctx context.Context, name ipns.Name) (*ipns.Record, error) {
@@ -126,6 +144,12 @@ func find[T any](ctx context.Context, routers []router, call func(router) (iter.
 
 	// Otherwise return manyIter with remaining iterators.
 	return newManyIter(ctx, its), nil
+}
+
+func (r parallelRouter) GetClosestPeers(ctx context.Context, key cid.Cid) (iter.ResultIter[*types.PeerRecord], error) {
+	return find(ctx, r.routers, func(ri router) (iter.ResultIter[*types.PeerRecord], error) {
+		return ri.GetClosestPeers(ctx, key)
+	})
 }
 
 type manyIter[T any] struct {
@@ -316,6 +340,7 @@ func (r parallelRouter) ProvideBitswap(ctx context.Context, req *server.BitswapW
 var _ router = libp2pRouter{}
 
 type libp2pRouter struct {
+	host    host.Host
 	routing routing.Routing
 }
 
@@ -347,6 +372,77 @@ func (d libp2pRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (it
 	}
 
 	return iter.ToResultIter(iter.FromSlice([]*types.PeerRecord{rec})), nil
+}
+
+func (d libp2pRouter) GetClosestPeers(ctx context.Context, key cid.Cid) (iter.ResultIter[*types.PeerRecord], error) {
+	// Per the spec, if the peer ID is empty, we should use self.
+	if key == cid.Undef {
+		return nil, errors.New("GetClosestPeers: key is undefined")
+	}
+
+	keyStr := string(key.Hash())
+	var peers []peer.ID
+	var err error
+
+	switch dhtClient := d.routing.(type) {
+	case *dual.DHT:
+		// Only use WAN DHT for public HTTP Routing API (same as Kubo)
+		// LAN DHT contains private network peers that should not be exposed publicly.
+		if dhtClient.WAN == nil {
+			return nil, fmt.Errorf("GetClosestPeers not supported: WAN DHT is not available")
+		}
+		peers, err = dhtClient.WAN.GetClosestPeers(ctx, keyStr)
+		if err != nil {
+			return nil, err
+		}
+	case *fullrt.FullRT:
+		peers, err = dhtClient.GetClosestPeers(ctx, keyStr)
+		if err != nil {
+			return nil, err
+		}
+	case *dht.IpfsDHT:
+		peers, err = dhtClient.GetClosestPeers(ctx, keyStr)
+		if err != nil {
+			return nil, err
+		}
+	case *bundledDHT:
+		// bundledDHT uses either fullRT (when ready) or standard DHT
+		// We need to call GetClosestPeers on the active DHT
+		activeDHT := dhtClient.getDHT()
+		switch dht := activeDHT.(type) {
+		case *fullrt.FullRT:
+			peers, err = dht.GetClosestPeers(ctx, keyStr)
+		case *dht.IpfsDHT:
+			peers, err = dht.GetClosestPeers(ctx, keyStr)
+		default:
+			return nil, errors.New("bundledDHT returned unexpected DHT type")
+		}
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, errors.New("cannot call GetClosestPeers on DHT implementation")
+	}
+
+	// We have some DHT-closest peers. Find addresses for them.
+	// The addresses should be in the peerstore.
+	var records []*types.PeerRecord
+	for _, p := range peers {
+		addrs := d.host.Peerstore().Addrs(p)
+		rAddrs := make([]types.Multiaddr, len(addrs))
+		for i, addr := range addrs {
+			rAddrs[i] = types.Multiaddr{Multiaddr: addr}
+		}
+		record := types.PeerRecord{
+			ID:     &p,
+			Schema: types.SchemaPeer,
+			Addrs:  rAddrs,
+			// we dont seem to care about protocol/extra infos
+		}
+		records = append(records, &record)
+	}
+
+	return iter.ToResultIter(iter.FromSlice(records)), nil
 }
 
 func (d libp2pRouter) GetIPNS(ctx context.Context, name ipns.Name) (*ipns.Record, error) {
@@ -458,6 +554,22 @@ func (r sanitizeRouter) FindProviders(ctx context.Context, key cid.Cid, limit in
 
 func (r sanitizeRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
 	it, err := r.router.FindPeers(ctx, pid, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	return iter.Map(it, func(v iter.Result[*types.PeerRecord]) iter.Result[*types.PeerRecord] {
+		if v.Err != nil || v.Val == nil {
+			return v
+		}
+
+		v.Val.Addrs = filterPrivateMultiaddr(v.Val.Addrs)
+		return v
+	}), nil
+}
+
+func (r sanitizeRouter) GetClosestPeers(ctx context.Context, key cid.Cid) (iter.ResultIter[*types.PeerRecord], error) {
+	it, err := r.router.GetClosestPeers(ctx, key)
 	if err != nil {
 		return nil, err
 	}

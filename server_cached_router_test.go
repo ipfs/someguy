@@ -151,6 +151,79 @@ func TestCachedRouter(t *testing.T) {
 		require.Equal(t, publicAddr.String(), results[0].Addrs[0].String())
 	})
 
+	t.Run("GetClosestPeers with cached addresses", func(t *testing.T) {
+		ctx := context.Background()
+		c := makeCID()
+		pid := peer.ID("test-peer")
+
+		// Create mock router
+		mr := &mockRouter{}
+		mockIter := newMockResultIter([]iter.Result[*types.PeerRecord]{
+			{Val: &types.PeerRecord{Schema: "peer", ID: &pid, Addrs: nil}},
+		})
+		mr.On("GetClosestPeers", mock.Anything, c).Return(mockIter, nil)
+
+		// Create cached address book with test addresses
+		cab, err := newCachedAddrBook()
+		require.NoError(t, err)
+
+		publicAddr := mustMultiaddr(t, "/ip4/137.21.14.12/tcp/4001")
+		cab.addrBook.AddAddrs(pid, []multiaddr.Multiaddr{publicAddr.Multiaddr}, time.Hour)
+
+		// Create cached router
+		cr := NewCachedRouter(mr, cab)
+
+		it, err := cr.GetClosestPeers(ctx, c)
+		require.NoError(t, err)
+
+		results, err := iter.ReadAllResults(it)
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+
+		// Verify cached addresses were added
+		require.Equal(t, pid, *results[0].ID)
+		require.Len(t, results[0].Addrs, 1)
+		require.Equal(t, publicAddr.String(), results[0].Addrs[0].String())
+	})
+
+	t.Run("GetClosestPeers with fallback to FindPeers", func(t *testing.T) {
+		ctx := context.Background()
+		c := makeCID()
+		pid := peer.ID("test-peer")
+		publicAddr := mustMultiaddr(t, "/ip4/137.21.14.12/tcp/4001")
+
+		// Create mock router
+		mr := &mockRouter{}
+		getClosestIter := newMockResultIter([]iter.Result[*types.PeerRecord]{
+			{Val: &types.PeerRecord{Schema: "peer", ID: &pid, Addrs: nil}},
+		})
+		mr.On("GetClosestPeers", mock.Anything, c).Return(getClosestIter, nil)
+
+		findPeersIter := newMockResultIter([]iter.Result[*types.PeerRecord]{
+			{Val: &types.PeerRecord{Schema: "peer", ID: &pid, Addrs: []types.Multiaddr{publicAddr}}},
+		})
+		mr.On("FindPeers", mock.Anything, pid, 1).Return(findPeersIter, nil)
+
+		// Create cached address book with empty cache
+		cab, err := newCachedAddrBook()
+		require.NoError(t, err)
+
+		// Create cached router
+		cr := NewCachedRouter(mr, cab)
+
+		it, err := cr.GetClosestPeers(ctx, c)
+		require.NoError(t, err)
+
+		results, err := iter.ReadAllResults(it)
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+
+		// Verify addresses from FindPeers fallback
+		require.Equal(t, pid, *results[0].ID)
+		require.Len(t, results[0].Addrs, 1)
+		require.Equal(t, publicAddr.String(), results[0].Addrs[0].String())
+	})
+
 }
 
 func TestCacheFallbackIter(t *testing.T) {
@@ -173,7 +246,7 @@ func TestCacheFallbackIter(t *testing.T) {
 		cr := NewCachedRouter(mr, cab)
 
 		// Create fallback iterator
-		fallbackIter := NewCacheFallbackIter(sourceIter, cr, ctx)
+		fallbackIter := NewCacheFallbackIter(sourceIter, cr, ctx, addrQueryOriginUnknown)
 
 		// Read all results
 		results, err := iter.ReadAllResults(fallbackIter)
@@ -204,7 +277,7 @@ func TestCacheFallbackIter(t *testing.T) {
 		cr := NewCachedRouter(mr, cab)
 
 		// Create fallback iterator
-		fallbackIter := NewCacheFallbackIter(sourceIter, cr, ctx)
+		fallbackIter := NewCacheFallbackIter(sourceIter, cr, ctx, addrQueryOriginUnknown)
 
 		// Read all results
 		results, err := iter.ReadAllResults(fallbackIter)
@@ -240,7 +313,7 @@ func TestCacheFallbackIter(t *testing.T) {
 		cr := NewCachedRouter(mr, cab)
 
 		// Create fallback iterator
-		fallbackIter := NewCacheFallbackIter(sourceIter, cr, ctx)
+		fallbackIter := NewCacheFallbackIter(sourceIter, cr, ctx, addrQueryOriginUnknown)
 
 		// Read all results
 		results, err := iter.ReadAllResults(fallbackIter)
@@ -266,7 +339,7 @@ func TestCacheFallbackIter(t *testing.T) {
 		cr := NewCachedRouter(mr, cab)
 
 		// Create fallback iterator
-		fallbackIter := NewCacheFallbackIter(sourceIter, cr, ctx)
+		fallbackIter := NewCacheFallbackIter(sourceIter, cr, ctx, addrQueryOriginUnknown)
 
 		// Cancel context before sending any values
 		cancel()
@@ -293,7 +366,7 @@ func TestCacheFallbackIter(t *testing.T) {
 		cr := NewCachedRouter(mr, cab)
 
 		// Create fallback iterator
-		fallbackIter := NewCacheFallbackIter(sourceIter, cr, ctx)
+		fallbackIter := NewCacheFallbackIter(sourceIter, cr, ctx, addrQueryOriginUnknown)
 
 		// First Next() should succeed
 		require.True(t, fallbackIter.Next())
@@ -336,7 +409,7 @@ func TestCacheFallbackIter(t *testing.T) {
 		cr := NewCachedRouter(mr, cab)
 
 		// Create fallback iterator
-		fallbackIter := NewCacheFallbackIter(sourceIter, cr, ctx)
+		fallbackIter := NewCacheFallbackIter(sourceIter, cr, ctx, addrQueryOriginUnknown)
 
 		// Cancel context during lookup
 		cancel()
@@ -364,7 +437,7 @@ func TestCacheFallbackIter(t *testing.T) {
 		cr := NewCachedRouter(mr, cab)
 
 		// Create fallback iterator
-		fallbackIter := NewCacheFallbackIter(sourceIter, cr, ctx)
+		fallbackIter := NewCacheFallbackIter(sourceIter, cr, ctx, addrQueryOriginUnknown)
 
 		// Should still get a result, but with no addresses
 		results, err := iter.ReadAllResults(fallbackIter)
@@ -400,7 +473,7 @@ func TestCacheFallbackIter(t *testing.T) {
 		cr := NewCachedRouter(mr, cab)
 
 		// Create fallback iterator
-		fallbackIter := NewCacheFallbackIter(sourceIter, cr, ctx)
+		fallbackIter := NewCacheFallbackIter(sourceIter, cr, ctx, addrQueryOriginUnknown)
 
 		// Should get all records with addresses
 		results, err := iter.ReadAllResults(fallbackIter)

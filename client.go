@@ -116,6 +116,47 @@ func findPeers(ctx context.Context, pid peer.ID, endpoint string, prettyOutput b
 	return nil
 }
 
+func getClosestPeers(ctx context.Context, key cid.Cid, endpoint string, prettyOutput bool) error {
+	drc, err := newDelegatedRoutingClient(endpoint)
+	if err != nil {
+		return err
+	}
+
+	recordsIter, err := drc.GetClosestPeers(ctx, key)
+	if err != nil {
+		return err
+	}
+	defer recordsIter.Close()
+
+	for recordsIter.Next() {
+		res := recordsIter.Val()
+
+		// Check for error, but do not complain if we exceeded the timeout. We are
+		// expecting that to happen: we explicitly defined a timeout.
+		if res.Err != nil {
+			if !errors.Is(res.Err, context.DeadlineExceeded) {
+				return res.Err
+			}
+
+			return nil
+		}
+
+		if prettyOutput {
+			fmt.Fprintln(os.Stdout, res.Val.ID)
+			fmt.Fprintln(os.Stdout, "\tProtocols:", res.Val.Protocols)
+			fmt.Fprintln(os.Stdout, "\tAddresses:", res.Val.Addrs)
+			fmt.Fprintln(os.Stdout)
+		} else {
+			err := json.NewEncoder(os.Stdout).Encode(res.Val)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 func getIPNS(ctx context.Context, name ipns.Name, endpoint string, prettyOutput bool) error {
 	drc, err := newDelegatedRoutingClient(endpoint)
 	if err != nil {

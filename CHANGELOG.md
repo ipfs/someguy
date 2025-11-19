@@ -18,6 +18,11 @@ The following emojis are used to highlight certain changes:
 - AutoConf support: automatic configuration of bootstrap peers and delegated routing endpoints ([#123](https://github.com/ipfs/someguy/pull/123)). When enabled (default), the `auto` placeholder is replaced with network-recommended values.
   - All endpoint flags (`--provider-endpoints`, `--peer-endpoints`, `--ipns-endpoints`) default to `auto`
   - See [environment-variables.md](docs/environment-variables.md#someguy_autoconf) for configuration details
+- Added `/routing/v1/peers/closest/{key}` endpoint implementing [IPIP-476](https://github.com/ipfs/specs/pull/476)
+  - Returns DHT-closest peers to a given CID or PeerID
+  - Accepts both CID and legacy PeerID formats (e.g., `12D3KooW...`)
+  - Uses WAN DHT only for more reliable results
+  - Includes cached addresses in results when available
 
 ### Changed
 
