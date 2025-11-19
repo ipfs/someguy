@@ -6,19 +6,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGetCombinedRouting(t *testing.T) {
+func TestCombineRouters(t *testing.T) {
 	t.Parallel()
 
-	// Check of the result of get combined routing is a sanitize router.
-	v, err := getCombinedRouting(nil, &bundledDHT{}, nil, nil)
-	require.NoError(t, err)
+	// Mock router for testing
+	mockRouter := composableRouter{}
+
+	// Check that combineRouters with DHT only returns sanitizeRouter
+	v := combineRouters(&bundledDHT{}, nil, nil, nil)
 	require.IsType(t, sanitizeRouter{}, v)
 
-	v, err = getCombinedRouting([]string{"https://example.com/"}, nil, nil, nil)
-	require.NoError(t, err)
+	// Check that combineRouters with delegated routers only returns parallelRouter
+	v = combineRouters(nil, nil, []router{mockRouter}, nil)
 	require.IsType(t, parallelRouter{}, v)
 
-	v, err = getCombinedRouting([]string{"https://example.com/"}, &bundledDHT{}, nil, nil)
-	require.NoError(t, err)
+	// Check that combineRouters with both DHT and delegated routers returns parallelRouter
+	v = combineRouters(&bundledDHT{}, nil, []router{mockRouter}, nil)
 	require.IsType(t, parallelRouter{}, v)
 }

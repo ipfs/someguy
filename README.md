@@ -63,6 +63,27 @@ If you don't want to run a server yourself, but want to query some other server,
 
 For more details run `someguy ask --help`.
 
+### AutoConf
+
+Automatic configuration of bootstrap peers and delegated routing endpoints. When enabled (default), the `auto` placeholder is replaced with network-recommended values fetched from a remote URL.
+
+Configuration:
+- `--autoconf` / [`SOMEGUY_AUTOCONF`](docs/environment-variables.md#someguy_autoconf)
+- `--autoconf-url` / [`SOMEGUY_AUTOCONF_URL`](docs/environment-variables.md#someguy_autoconf_url)
+- `--autoconf-refresh` / [`SOMEGUY_AUTOCONF_REFRESH`](docs/environment-variables.md#someguy_autoconf_refresh)
+
+Endpoint flags (default to `auto`):
+- `--provider-endpoints` / [`SOMEGUY_PROVIDER_ENDPOINTS`](docs/environment-variables.md#someguy_provider_endpoints)
+- `--peer-endpoints` / [`SOMEGUY_PEER_ENDPOINTS`](docs/environment-variables.md#someguy_peer_endpoints)
+- `--ipns-endpoints` / [`SOMEGUY_IPNS_ENDPOINTS`](docs/environment-variables.md#someguy_ipns_endpoints)
+
+To use custom endpoints instead of `auto`:
+```bash
+someguy start --ipns-endpoints https://example.com
+```
+
+See [environment-variables.md](docs/environment-variables.md) for URL formats and configuration details.
+
 ## Deployment
 
 Suggested method for self-hosting is to run a [prebuilt Docker image](#docker).

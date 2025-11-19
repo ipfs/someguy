@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/ipfs/boxo/ipns"
-	"github.com/ipfs/boxo/routing/http/client"
 	"github.com/ipfs/boxo/routing/http/server"
 	"github.com/ipfs/boxo/routing/http/types"
 	"github.com/ipfs/boxo/routing/http/types/iter"
@@ -410,20 +409,6 @@ func (it *peerChanIter) Val() types.Record {
 func (it *peerChanIter) Close() error {
 	it.cancel()
 	return nil
-}
-
-var _ router = clientRouter{}
-
-type clientRouter struct {
-	*client.Client
-}
-
-func (d clientRouter) FindProviders(ctx context.Context, cid cid.Cid, limit int) (iter.ResultIter[types.Record], error) {
-	return d.Client.FindProviders(ctx, cid)
-}
-
-func (d clientRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
-	return d.Client.FindPeers(ctx, pid)
 }
 
 var _ server.ContentRouter = sanitizeRouter{}

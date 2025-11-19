@@ -15,6 +15,10 @@ The following emojis are used to highlight certain changes:
 
 ### Added
 
+- AutoConf support: automatic configuration of bootstrap peers and delegated routing endpoints ([#123](https://github.com/ipfs/someguy/pull/123)). When enabled (default), the `auto` placeholder is replaced with network-recommended values.
+  - All endpoint flags (`--provider-endpoints`, `--peer-endpoints`, `--ipns-endpoints`) default to `auto`
+  - See [environment-variables.md](docs/environment-variables.md#someguy_autoconf) for configuration details
+
 ### Changed
 
 - [go-libp2p v0.45.0](https://github.com/libp2p/go-libp2p/releases/tag/v0.45.0)
