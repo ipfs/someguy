@@ -88,7 +88,7 @@ func normalizeEndpointURL(url, expectedPath, flagName string) (string, error) {
 	}
 
 	// Check if URL has a different routing path (potential misconfiguration)
-	routingPaths := []string{
+	routingPaths := [...]string{
 		autoconf.RoutingV1ProvidersPath,
 		autoconf.RoutingV1PeersPath,
 		autoconf.RoutingV1IPNSPath,
