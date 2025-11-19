@@ -191,13 +191,8 @@ func stripRoutingPaths(urls []string, expectedPath string) []string {
 	for _, url := range urls {
 		// Trim trailing slash for comparison
 		normalized := strings.TrimSuffix(url, "/")
-		if strings.HasSuffix(normalized, expectedPath) {
-			// Autoconf-expanded URL with path - strip it
-			result = append(result, strings.TrimSuffix(normalized, expectedPath))
-		} else {
-			// Custom base URL without path - keep normalized (no trailing slash)
-			result = append(result, normalized)
-		}
+		// Strip path from autoconf-expanded URL or keep normalized base URL.
+		result = append(result, strings.TrimSuffix(normalized, expectedPath))
 	}
 	return deduplicateEndpoints(result)
 }
