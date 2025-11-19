@@ -1,3 +1,14 @@
+// server_delegated_routing.go implements HTTP delegated routing for the server.
+//
+// This file contains code for creating and managing HTTP clients that talk to
+// remote delegated routing endpoints (e.g., cid.contact, delegated-ipfs.dev).
+// The server uses these HTTP clients to perform content, peer, and IPNS lookups
+// when delegated routing is enabled.
+//
+// Key components:
+//   - newDelegatedRoutingClient: creates HTTP client with consistent options
+//   - collectEndpoints: deduplicates URLs and aggregates capabilities
+//   - createDelegatedHTTPRouters: creates one client per unique base URL
 package main
 
 import (
@@ -28,6 +39,16 @@ func (d clientRouter) FindProviders(ctx context.Context, cid cid.Cid, limit int)
 
 func (d clientRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
 	return d.Client.FindPeers(ctx, pid)
+}
+
+// newDelegatedRoutingClient creates an HTTP delegated routing client with consistent options
+func newDelegatedRoutingClient(endpoint string) (*drclient.Client, error) {
+	return drclient.New(
+		endpoint,
+		drclient.WithUserAgent("someguy/"+buildVersion()),
+		drclient.WithProtocolFilter([]string{}),
+		drclient.WithDisabledLocalFiltering(true),
+	)
 }
 
 // endpointConfig tracks which routing capabilities a base URL should provide
@@ -101,13 +122,7 @@ func createDelegatedHTTPRouters(cfg *config) (providers, peers, ipns []router, e
 
 	for _, endpoint := range endpoints {
 		// Create ONE HTTP client per unique base URL
-		client, err := drclient.New(
-			endpoint.baseURL,
-			drclient.WithUserAgent("someguy/"+buildVersion()),
-			// override default filters, we want all results from remote endpoint
-			drclient.WithProtocolFilter([]string{}),
-			drclient.WithDisabledLocalFiltering(true),
-		)
+		client, err := newDelegatedRoutingClient(endpoint.baseURL)
 		if err != nil {
 			return nil, nil, nil, err
 		}

@@ -139,7 +139,7 @@ func expandDelegatedRoutingEndpoints(cfg *config, autoConf *autoconf.Config) err
 		if slices.Contains(normalizedProviders, autoconf.AutoPlaceholder) ||
 			slices.Contains(normalizedPeers, autoconf.AutoPlaceholder) ||
 			slices.Contains(normalizedIPNS, autoconf.AutoPlaceholder) {
-			return autoconfDisabledError("endpoint option", "SOMEGUY_PROVIDER_ENDPOINTS/SOMEGUY_PEER_ENDPOINTS/SOMEGUY_IPNS_ENDPOINTS", "--provider-endpoints/--peer-endpoints/--ipns-endpoints")
+			return fmt.Errorf("'auto' placeholder found in endpoint option but autoconf is disabled. Set explicit endpoint option with SOMEGUY_PROVIDER_ENDPOINTS/SOMEGUY_PEER_ENDPOINTS/SOMEGUY_IPNS_ENDPOINTS or --provider-endpoints/--peer-endpoints/--ipns-endpoints, or re-enable autoconf")
 		}
 		// No autoconf, keep normalized endpoints as configured
 		cfg.contentEndpoints = deduplicateEndpoints(normalizedProviders)
@@ -209,12 +209,6 @@ func deduplicateEndpoints(endpoints []string) []string {
 	}
 	slices.Sort(endpoints)
 	return slices.Compact(endpoints)
-}
-
-// autoconfDisabledError returns a consistent error message when auto placeholder is found but autoconf is disabled
-func autoconfDisabledError(configType, envVar, flag string) error {
-	return fmt.Errorf("'auto' placeholder found in %s but autoconf is disabled. Set explicit %s with %s or %s, or re-enable autoconf",
-		configType, configType, envVar, flag)
 }
 
 func stringsToPeerAddrInfos(addrs []string) []peer.AddrInfo {

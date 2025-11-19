@@ -9,14 +9,13 @@ import (
 	"time"
 
 	"github.com/ipfs/boxo/ipns"
-	"github.com/ipfs/boxo/routing/http/client"
 	"github.com/ipfs/boxo/routing/http/types"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 func findProviders(ctx context.Context, key cid.Cid, endpoint string, prettyOutput bool) error {
-	drc, err := client.New(endpoint, client.WithDisabledLocalFiltering(true))
+	drc, err := newDelegatedRoutingClient(endpoint)
 	if err != nil {
 		return err
 	}
@@ -77,7 +76,7 @@ func findProviders(ctx context.Context, key cid.Cid, endpoint string, prettyOutp
 }
 
 func findPeers(ctx context.Context, pid peer.ID, endpoint string, prettyOutput bool) error {
-	drc, err := client.New(endpoint, client.WithDisabledLocalFiltering(true))
+	drc, err := newDelegatedRoutingClient(endpoint)
 	if err != nil {
 		return err
 	}
@@ -118,7 +117,7 @@ func findPeers(ctx context.Context, pid peer.ID, endpoint string, prettyOutput b
 }
 
 func getIPNS(ctx context.Context, name ipns.Name, endpoint string, prettyOutput bool) error {
-	drc, err := client.New(endpoint)
+	drc, err := newDelegatedRoutingClient(endpoint)
 	if err != nil {
 		return err
 	}
@@ -172,7 +171,7 @@ func getIPNS(ctx context.Context, name ipns.Name, endpoint string, prettyOutput 
 }
 
 func putIPNS(ctx context.Context, name ipns.Name, record []byte, endpoint string) error {
-	drc, err := client.New(endpoint)
+	drc, err := newDelegatedRoutingClient(endpoint)
 	if err != nil {
 		return err
 	}
