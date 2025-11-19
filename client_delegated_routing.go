@@ -12,7 +12,10 @@ import (
 	"go.opencensus.io/stats/view"
 )
 
-// clientRouter wraps an HTTP delegated routing client to implement the router interface
+// clientRouter wraps an HTTP delegated routing client to implement the router interface.
+// Only FindProviders and FindPeers are explicitly implemented to adapt the signature
+// (our interface includes a limit parameter). The IPNS methods (GetIPNS/PutIPNS) are
+// inherited from the embedded drclient.Client as their signatures already match.
 var _ router = clientRouter{}
 
 type clientRouter struct {
@@ -43,6 +46,9 @@ func collectEndpoints(cfg *config) []endpointConfig {
 
 	// Collect provider endpoints
 	for _, url := range cfg.contentEndpoints {
+		if url == "" {
+			continue // skip empty strings
+		}
 		if caps := capabilities[url]; caps != nil {
 			caps.providers = true
 		} else {
@@ -52,6 +58,9 @@ func collectEndpoints(cfg *config) []endpointConfig {
 
 	// Collect peer endpoints
 	for _, url := range cfg.peerEndpoints {
+		if url == "" {
+			continue // skip empty strings
+		}
 		if caps := capabilities[url]; caps != nil {
 			caps.peers = true
 		} else {
@@ -61,6 +70,9 @@ func collectEndpoints(cfg *config) []endpointConfig {
 
 	// Collect IPNS endpoints
 	for _, url := range cfg.ipnsEndpoints {
+		if url == "" {
+			continue // skip empty strings
+		}
 		if caps := capabilities[url]; caps != nil {
 			caps.ipns = true
 		} else {

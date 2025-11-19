@@ -261,4 +261,402 @@ func TestExpandDelegatedRoutingEndpoints(t *testing.T) {
 			"https://peer2.example.com",
 		}, cfg.peerEndpoints)
 	})
+
+	t.Run("trailing slashes handled consistently", func(t *testing.T) {
+		cfg := config{
+			autoConf: autoConfConfig{
+				enabled: true,
+			},
+			dhtType: "none",
+			contentEndpoints: []string{
+				"https://example.com/routing/v1/providers/", // with trailing slash
+				"https://another.com/routing/v1/providers",  // without trailing slash
+				"https://base.com/",                         // base URL with trailing slash
+				"https://clean.com",                         // base URL without trailing slash
+			},
+		}
+
+		mockAutoConf := &autoconf.Config{}
+		err := expandDelegatedRoutingEndpoints(&cfg, mockAutoConf)
+		require.NoError(t, err)
+
+		// Verify trailing slashes are normalized (removed) consistently
+		// Paths should be stripped and trailing slashes removed
+		assert.ElementsMatch(t, []string{
+			"https://another.com",
+			"https://base.com", // trailing slash removed
+			"https://clean.com",
+			"https://example.com", // path stripped and trailing slash removed
+		}, cfg.contentEndpoints)
+	})
+}
+
+// TestNormalizeEndpointURL verifies URL normalization and path handling
+func TestNormalizeEndpointURL(t *testing.T) {
+	tests := []struct {
+		name         string
+		url          string
+		expectedPath string
+		flagName     string
+		want         string
+		wantErr      bool
+		errContains  string
+	}{
+		{
+			name:         "auto placeholder passes through",
+			url:          autoconf.AutoPlaceholder,
+			expectedPath: autoconf.RoutingV1ProvidersPath,
+			flagName:     "--provider-endpoints",
+			want:         autoconf.AutoPlaceholder,
+			wantErr:      false,
+		},
+		{
+			name:         "URL with expected path stripped",
+			url:          "https://example.com/routing/v1/providers",
+			expectedPath: autoconf.RoutingV1ProvidersPath,
+			flagName:     "--provider-endpoints",
+			want:         "https://example.com",
+			wantErr:      false,
+		},
+		{
+			name:         "URL with trailing slash and expected path passes through",
+			url:          "https://example.com/routing/v1/providers/",
+			expectedPath: autoconf.RoutingV1ProvidersPath,
+			flagName:     "--provider-endpoints",
+			want:         "https://example.com/routing/v1/providers/",
+			wantErr:      false,
+		},
+		{
+			name:         "base URL without path",
+			url:          "https://example.com",
+			expectedPath: autoconf.RoutingV1ProvidersPath,
+			flagName:     "--provider-endpoints",
+			want:         "https://example.com",
+			wantErr:      false,
+		},
+		{
+			name:         "base URL with trailing slash",
+			url:          "https://example.com/",
+			expectedPath: autoconf.RoutingV1ProvidersPath,
+			flagName:     "--provider-endpoints",
+			want:         "https://example.com/",
+			wantErr:      false,
+		},
+		{
+			name:         "peers path in provider flag errors with mismatch message",
+			url:          "https://example.com/routing/v1/peers",
+			expectedPath: autoconf.RoutingV1ProvidersPath,
+			flagName:     "--provider-endpoints",
+			want:         "",
+			wantErr:      true,
+			errContains:  "has path \"/routing/v1/peers\" which doesn't match --provider-endpoints (expected \"/routing/v1/providers\"",
+		},
+		{
+			name:         "IPNS path in provider flag errors with mismatch message",
+			url:          "https://example.com/routing/v1/ipns",
+			expectedPath: autoconf.RoutingV1ProvidersPath,
+			flagName:     "--provider-endpoints",
+			want:         "",
+			wantErr:      true,
+			errContains:  "has path \"/routing/v1/ipns\" which doesn't match --provider-endpoints (expected \"/routing/v1/providers\"",
+		},
+		{
+			name:         "provider path in peer flag errors with mismatch message",
+			url:          "https://example.com/routing/v1/providers",
+			expectedPath: autoconf.RoutingV1PeersPath,
+			flagName:     "--peer-endpoints",
+			want:         "",
+			wantErr:      true,
+			errContains:  "has path \"/routing/v1/providers\" which doesn't match --peer-endpoints (expected \"/routing/v1/peers\"",
+		},
+		{
+			name:         "provider path in IPNS flag errors with mismatch message",
+			url:          "https://example.com/routing/v1/providers",
+			expectedPath: autoconf.RoutingV1IPNSPath,
+			flagName:     "--ipns-endpoints",
+			want:         "",
+			wantErr:      true,
+			errContains:  "has path \"/routing/v1/providers\" which doesn't match --ipns-endpoints (expected \"/routing/v1/ipns\"",
+		},
+		{
+			name:         "peer path in IPNS flag errors with mismatch message",
+			url:          "https://example.com/routing/v1/peers",
+			expectedPath: autoconf.RoutingV1IPNSPath,
+			flagName:     "--ipns-endpoints",
+			want:         "",
+			wantErr:      true,
+			errContains:  "has path \"/routing/v1/peers\" which doesn't match --ipns-endpoints (expected \"/routing/v1/ipns\"",
+		},
+		{
+			name:         "IPNS path in peer flag errors with mismatch message",
+			url:          "https://example.com/routing/v1/ipns",
+			expectedPath: autoconf.RoutingV1PeersPath,
+			flagName:     "--peer-endpoints",
+			want:         "",
+			wantErr:      true,
+			errContains:  "has path \"/routing/v1/ipns\" which doesn't match --peer-endpoints (expected \"/routing/v1/peers\"",
+		},
+		{
+			name:         "custom path accepted",
+			url:          "https://example.com/custom/path",
+			expectedPath: autoconf.RoutingV1ProvidersPath,
+			flagName:     "--provider-endpoints",
+			want:         "https://example.com/custom/path",
+			wantErr:      false,
+		},
+		{
+			name:         "empty URL passes through",
+			url:          "",
+			expectedPath: autoconf.RoutingV1ProvidersPath,
+			flagName:     "--provider-endpoints",
+			want:         "",
+			wantErr:      false,
+		},
+		{
+			name:         "peer path works for peer endpoints",
+			url:          "https://example.com/routing/v1/peers",
+			expectedPath: autoconf.RoutingV1PeersPath,
+			flagName:     "--peer-endpoints",
+			want:         "https://example.com",
+			wantErr:      false,
+		},
+		{
+			name:         "IPNS path works for IPNS endpoints",
+			url:          "https://example.com/routing/v1/ipns",
+			expectedPath: autoconf.RoutingV1IPNSPath,
+			flagName:     "--ipns-endpoints",
+			want:         "https://example.com",
+			wantErr:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := normalizeEndpointURL(tt.url, tt.expectedPath, tt.flagName)
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
+
+// TestValidateEndpointURLs verifies batch URL validation with proper error messages
+func TestValidateEndpointURLs(t *testing.T) {
+	tests := []struct {
+		name         string
+		urls         []string
+		expectedPath string
+		flagName     string
+		envVar       string
+		want         []string
+		wantErr      bool
+		errContains  []string
+	}{
+		{
+			name:         "valid URLs pass validation",
+			urls:         []string{"https://a.com", "https://b.com/routing/v1/providers"},
+			expectedPath: autoconf.RoutingV1ProvidersPath,
+			flagName:     "--provider-endpoints",
+			envVar:       "SOMEGUY_PROVIDER_ENDPOINTS",
+			want:         []string{"https://a.com", "https://b.com"},
+			wantErr:      false,
+		},
+		{
+			name:         "auto placeholder passes validation",
+			urls:         []string{autoconf.AutoPlaceholder},
+			expectedPath: autoconf.RoutingV1ProvidersPath,
+			flagName:     "--provider-endpoints",
+			envVar:       "SOMEGUY_PROVIDER_ENDPOINTS",
+			want:         []string{autoconf.AutoPlaceholder},
+			wantErr:      false,
+		},
+		{
+			name:         "mixed auto and custom URLs",
+			urls:         []string{autoconf.AutoPlaceholder, "https://custom.com"},
+			expectedPath: autoconf.RoutingV1ProvidersPath,
+			flagName:     "--provider-endpoints",
+			envVar:       "SOMEGUY_PROVIDER_ENDPOINTS",
+			want:         []string{autoconf.AutoPlaceholder, "https://custom.com"},
+			wantErr:      false,
+		},
+		{
+			name:         "mismatched path error includes flag and env var",
+			urls:         []string{"https://example.com/routing/v1/peers"},
+			expectedPath: autoconf.RoutingV1ProvidersPath,
+			flagName:     "--provider-endpoints",
+			envVar:       "SOMEGUY_PROVIDER_ENDPOINTS",
+			want:         nil,
+			wantErr:      true,
+			errContains:  []string{"SOMEGUY_PROVIDER_ENDPOINTS", "--provider-endpoints", "/routing/v1/peers"},
+		},
+		{
+			name:         "empty URLs list",
+			urls:         []string{},
+			expectedPath: autoconf.RoutingV1ProvidersPath,
+			flagName:     "--provider-endpoints",
+			envVar:       "SOMEGUY_PROVIDER_ENDPOINTS",
+			want:         []string{},
+			wantErr:      false,
+		},
+		{
+			name:         "URLs with trailing slashes pass through",
+			urls:         []string{"https://a.com/routing/v1/providers/", "https://b.com/"},
+			expectedPath: autoconf.RoutingV1ProvidersPath,
+			flagName:     "--provider-endpoints",
+			envVar:       "SOMEGUY_PROVIDER_ENDPOINTS",
+			want:         []string{"https://a.com/routing/v1/providers/", "https://b.com/"},
+			wantErr:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := validateEndpointURLs(tt.urls, tt.expectedPath, tt.flagName, tt.envVar)
+			if tt.wantErr {
+				require.Error(t, err)
+				for _, contains := range tt.errContains {
+					assert.Contains(t, err.Error(), contains)
+				}
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
+
+// TestStripRoutingPaths verifies path stripping and deduplication logic
+func TestStripRoutingPaths(t *testing.T) {
+	tests := []struct {
+		name         string
+		urls         []string
+		expectedPath string
+		want         []string
+	}{
+		{
+			name:         "strips expected paths",
+			urls:         []string{"https://a.com/routing/v1/providers", "https://b.com/routing/v1/providers"},
+			expectedPath: autoconf.RoutingV1ProvidersPath,
+			want:         []string{"https://a.com", "https://b.com"},
+		},
+		{
+			name:         "normalizes trailing slashes",
+			urls:         []string{"https://a.com/routing/v1/providers/", "https://b.com/routing/v1/providers"},
+			expectedPath: autoconf.RoutingV1ProvidersPath,
+			want:         []string{"https://a.com", "https://b.com"},
+		},
+		{
+			name:         "preserves base URLs without paths",
+			urls:         []string{"https://a.com", "https://b.com"},
+			expectedPath: autoconf.RoutingV1ProvidersPath,
+			want:         []string{"https://a.com", "https://b.com"},
+		},
+		{
+			name:         "preserves custom paths",
+			urls:         []string{"https://a.com/custom/path", "https://b.com"},
+			expectedPath: autoconf.RoutingV1ProvidersPath,
+			want:         []string{"https://a.com/custom/path", "https://b.com"},
+		},
+		{
+			name:         "deduplicates after stripping",
+			urls:         []string{"https://a.com/routing/v1/providers", "https://a.com", "https://a.com/routing/v1/providers"},
+			expectedPath: autoconf.RoutingV1ProvidersPath,
+			want:         []string{"https://a.com"},
+		},
+		{
+			name:         "mixed URLs with and without paths",
+			urls:         []string{"https://a.com/routing/v1/providers", "https://b.com", "https://c.com/custom"},
+			expectedPath: autoconf.RoutingV1ProvidersPath,
+			want:         []string{"https://a.com", "https://b.com", "https://c.com/custom"},
+		},
+		{
+			name:         "removes trailing slashes from base URLs",
+			urls:         []string{"https://a.com/", "https://b.com"},
+			expectedPath: autoconf.RoutingV1ProvidersPath,
+			want:         []string{"https://a.com", "https://b.com"},
+		},
+		{
+			name:         "deduplicates URLs with and without trailing slashes",
+			urls:         []string{"https://a.com/", "https://a.com", "https://b.com/"},
+			expectedPath: autoconf.RoutingV1ProvidersPath,
+			want:         []string{"https://a.com", "https://b.com"},
+		},
+		{
+			name:         "empty URLs list",
+			urls:         []string{},
+			expectedPath: autoconf.RoutingV1ProvidersPath,
+			want:         []string{},
+		},
+		{
+			name:         "single URL with path",
+			urls:         []string{"https://example.com/routing/v1/providers"},
+			expectedPath: autoconf.RoutingV1ProvidersPath,
+			want:         []string{"https://example.com"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := stripRoutingPaths(tt.urls, tt.expectedPath)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestDeduplicateEndpoints verifies deduplication and sorting behavior
+func TestDeduplicateEndpoints(t *testing.T) {
+	tests := []struct {
+		name  string
+		input []string
+		want  []string
+	}{
+		{
+			name:  "empty slice",
+			input: []string{},
+			want:  []string{},
+		},
+		{
+			name:  "no duplicates",
+			input: []string{"https://a.com", "https://b.com"},
+			want:  []string{"https://a.com", "https://b.com"},
+		},
+		{
+			name:  "with duplicates",
+			input: []string{"https://a.com", "https://b.com", "https://a.com"},
+			want:  []string{"https://a.com", "https://b.com"},
+		},
+		{
+			name:  "all duplicates",
+			input: []string{"https://a.com", "https://a.com", "https://a.com"},
+			want:  []string{"https://a.com"},
+		},
+		{
+			name:  "unsorted input gets sorted",
+			input: []string{"https://c.com", "https://a.com", "https://b.com"},
+			want:  []string{"https://a.com", "https://b.com", "https://c.com"},
+		},
+		{
+			name:  "duplicates with unsorted input",
+			input: []string{"https://c.com", "https://a.com", "https://b.com", "https://a.com", "https://c.com"},
+			want:  []string{"https://a.com", "https://b.com", "https://c.com"},
+		},
+		{
+			name:  "single element",
+			input: []string{"https://example.com"},
+			want:  []string{"https://example.com"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := deduplicateEndpoints(tt.input)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }

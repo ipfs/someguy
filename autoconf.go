@@ -1,3 +1,18 @@
+// autoconf.go implements automatic configuration for someguy.
+//
+// Autoconf fetches network configuration from a remote JSON endpoint to automatically
+// configure bootstrap peers and delegated routing endpoints.
+//
+// The autoconf system:
+//   - Fetches configuration from a remote URL (configurable)
+//   - Caches configuration locally and refreshes periodically
+//   - Falls back to embedded defaults if fetching fails
+//   - Expands "auto" placeholder in endpoint configuration
+//   - Filters out endpoints for systems running natively (e.g., DHT)
+//   - Validates and normalizes endpoint URLs
+//
+// See https://github.com/ipfs/someguy/blob/main/docs/environment-variables.md
+// for configuration options and defaults.
 package main
 
 import (
@@ -170,15 +185,18 @@ func expandDelegatedRoutingEndpoints(cfg *config, autoConf *autoconf.Config) err
 
 // stripRoutingPaths strips the routing path from URLs and deduplicates
 // URLs without the expected path are kept as base URLs (from custom config)
+// Handles trailing slashes by normalizing before comparison
 func stripRoutingPaths(urls []string, expectedPath string) []string {
 	result := make([]string, 0, len(urls))
 	for _, url := range urls {
-		if strings.HasSuffix(url, expectedPath) {
+		// Trim trailing slash for comparison
+		normalized := strings.TrimSuffix(url, "/")
+		if strings.HasSuffix(normalized, expectedPath) {
 			// Autoconf-expanded URL with path - strip it
-			result = append(result, strings.TrimSuffix(url, expectedPath))
+			result = append(result, strings.TrimSuffix(normalized, expectedPath))
 		} else {
-			// Custom base URL without path - keep as-is
-			result = append(result, url)
+			// Custom base URL without path - keep normalized (no trailing slash)
+			result = append(result, normalized)
 		}
 	}
 	return deduplicateEndpoints(result)
@@ -221,24 +239,24 @@ func stringsToPeerAddrInfos(addrs []string) []peer.AddrInfo {
 }
 
 // createAutoConfClient creates an autoconf client with the given configuration
-func createAutoConfClient(config autoConfConfig) (*autoconf.Client, error) {
-	if config.cacheDir == "" {
-		config.cacheDir = filepath.Join(".", ".autoconf-cache")
+func createAutoConfClient(cfg autoConfConfig) (*autoconf.Client, error) {
+	if cfg.cacheDir == "" {
+		cfg.cacheDir = filepath.Join(".", ".autoconf-cache")
 	}
-	if config.refreshInterval == 0 {
-		config.refreshInterval = autoconf.DefaultRefreshInterval
+	if cfg.refreshInterval == 0 {
+		cfg.refreshInterval = autoconf.DefaultRefreshInterval
 	}
-	if config.url == "" {
-		config.url = autoconf.MainnetAutoConfURL
+	if cfg.url == "" {
+		cfg.url = autoconf.MainnetAutoConfURL
 	}
 
 	return autoconf.NewClient(
-		autoconf.WithCacheDir(config.cacheDir),
+		autoconf.WithCacheDir(cfg.cacheDir),
 		autoconf.WithUserAgent("someguy/"+version),
 		autoconf.WithCacheSize(autoconf.DefaultCacheSize),
 		autoconf.WithTimeout(autoconf.DefaultTimeout),
-		autoconf.WithURL(config.url),
-		autoconf.WithRefreshInterval(config.refreshInterval),
+		autoconf.WithURL(cfg.url),
+		autoconf.WithRefreshInterval(cfg.refreshInterval),
 		autoconf.WithFallback(autoconf.GetMainnetFallbackConfig),
 	)
 }
