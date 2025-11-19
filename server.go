@@ -198,11 +198,6 @@ func start(ctx context.Context, cfg *config) error {
 	prRouters := combineRouters(dhtRouting, cachedAddrBook, peerHTTPRouters, nil)
 	ipnsRouters := combineRouters(dhtRouting, cachedAddrBook, ipnsHTTPRouters, nil)
 
-	dhtRouters, err := getCombinedRouting(nil, h, dhtRouting, cachedAddrBook, nil)
-	if err != nil {
-		return err
-	}
-
 	_, port, err := net.SplitHostPort(cfg.listenAddress)
 	if err != nil {
 		return err
@@ -225,7 +220,6 @@ func start(ctx context.Context, cfg *config) error {
 		providers: crRouters,
 		peers:     prRouters,
 		ipns:      ipnsRouters,
-		dht:       dhtRouters,
 	}, handlerOpts...)
 
 	// Add CORS.
@@ -335,10 +329,10 @@ func combineRouters(dht routing.Routing, cachedAddrBook *cachedAddrBook, delegat
 	var dhtRouter router
 
 	if cachedAddrBook != nil {
-		cachedRouter := NewCachedRouter(libp2pRouter{host: host, routing: dht}, cachedAddrBook)
+		cachedRouter := NewCachedRouter(libp2pRouter{routing: dht}, cachedAddrBook)
 		dhtRouter = sanitizeRouter{cachedRouter}
 	} else if dht != nil {
-		dhtRouter = sanitizeRouter{libp2pRouter{host: host, routing: dht}}
+		dhtRouter = sanitizeRouter{libp2pRouter{routing: dht}}
 	}
 
 	if len(delegatedRouters) == 0 && len(additionalRouters) == 0 {

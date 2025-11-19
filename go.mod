@@ -9,7 +9,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1
 	github.com/felixge/httpsnoop v1.0.4
 	github.com/hashicorp/golang-lru/v2 v2.0.7
-	github.com/ipfs/boxo v0.35.3-0.20251112034801-918fee9e707f
+	github.com/ipfs/boxo v0.35.3-0.20251118170232-e71f50ea2263
 	github.com/ipfs/go-cid v0.5.0
 	github.com/ipfs/go-log/v2 v2.9.0
 	github.com/libp2p/go-libp2p v0.45.0
