@@ -19,14 +19,6 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-// cidContactEndpoint is the default for daemon mode (start command).
-// Used for proxying provider requests in addition to results from the local DHT client.
-const cidContactEndpoint = "https://cid.contact"
-
-// delegatedIPFSEndpoint is the default for CLI mode (ask command).
-// Used as the only source of routing results when no local DHT is available.
-const delegatedIPFSEndpoint = "https://delegated-ipfs.dev"
-
 func main() {
 	app := &cli.App{
 		Name:    name,
