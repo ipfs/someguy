@@ -194,9 +194,18 @@ func start(ctx context.Context, cfg *config) error {
 	}
 
 	// Combine HTTP routers with DHT and additional routers
-	crRouters := combineRouters(dhtRouting, cachedAddrBook, providerHTTPRouters, blockProviderRouters)
-	prRouters := combineRouters(dhtRouting, cachedAddrBook, peerHTTPRouters, nil)
-	ipnsRouters := combineRouters(dhtRouting, cachedAddrBook, ipnsHTTPRouters, nil)
+	crRouters := combineRouters(h, dhtRouting, cachedAddrBook, providerHTTPRouters, blockProviderRouters)
+	prRouters := combineRouters(h, dhtRouting, cachedAddrBook, peerHTTPRouters, nil)
+	ipnsRouters := combineRouters(h, dhtRouting, cachedAddrBook, ipnsHTTPRouters, nil)
+
+	// Create DHT router for GetClosestPeers endpoint
+	var dhtRouters router
+	if cachedAddrBook != nil && dhtRouting != nil {
+		cachedRouter := NewCachedRouter(libp2pRouter{host: h, routing: dhtRouting}, cachedAddrBook)
+		dhtRouters = sanitizeRouter{cachedRouter}
+	} else if dhtRouting != nil {
+		dhtRouters = sanitizeRouter{libp2pRouter{host: h, routing: dhtRouting}}
+	}
 
 	_, port, err := net.SplitHostPort(cfg.listenAddress)
 	if err != nil {
@@ -220,6 +229,7 @@ func start(ctx context.Context, cfg *config) error {
 		providers: crRouters,
 		peers:     prRouters,
 		ipns:      ipnsRouters,
+		dht:       dhtRouters,
 	}, handlerOpts...)
 
 	// Add CORS.
@@ -325,14 +335,14 @@ func newHost(cfg *config) (host.Host, error) {
 
 // combineRouters combines delegated HTTP routers with DHT and additional routers.
 // It no longer creates HTTP clients (that's done in createDelegatedHTTPRouters).
-func combineRouters(dht routing.Routing, cachedAddrBook *cachedAddrBook, delegatedRouters, additionalRouters []router) router {
+func combineRouters(h host.Host, dht routing.Routing, cachedAddrBook *cachedAddrBook, delegatedRouters, additionalRouters []router) router {
 	var dhtRouter router
 
 	if cachedAddrBook != nil {
-		cachedRouter := NewCachedRouter(libp2pRouter{routing: dht}, cachedAddrBook)
+		cachedRouter := NewCachedRouter(libp2pRouter{host: h, routing: dht}, cachedAddrBook)
 		dhtRouter = sanitizeRouter{cachedRouter}
 	} else if dht != nil {
-		dhtRouter = sanitizeRouter{libp2pRouter{routing: dht}}
+		dhtRouter = sanitizeRouter{libp2pRouter{host: h, routing: dht}}
 	}
 
 	if len(delegatedRouters) == 0 && len(additionalRouters) == 0 {

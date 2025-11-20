@@ -71,7 +71,9 @@ func (r composableRouter) FindPeers(ctx context.Context, pid peer.ID, limit int)
 
 func (r composableRouter) GetClosestPeers(ctx context.Context, key cid.Cid) (iter.ResultIter[*types.PeerRecord], error) {
 	if r.dht == nil {
-		return iter.ToResultIter(iter.FromSlice([]*types.PeerRecord{})), nil
+		// Return ErrNotSupported when no DHT is available (e.g., disabled via --dht=disabled CLI param).
+		// This returns HTTP 501 Not Implemented instead of misleading HTTP 200 with empty results.
+		return nil, routing.ErrNotSupported
 	}
 	return r.dht.GetClosestPeers(ctx, key)
 }

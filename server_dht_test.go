@@ -351,6 +351,32 @@ func TestGetClosestPeersEndpoint(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 		require.Equal(t, mediaTypeJSON, resp.Header.Get("Content-Type"))
 	})
+
+	t.Run("GET /routing/v1/dht/closest/peers/{cid} returns 500 when DHT is disabled", func(t *testing.T) {
+		t.Parallel()
+
+		_, pid := makeEd25519PeerID(t)
+		key := peer.ToCid(pid)
+
+		// Pass nil router to simulate DHT disabled via --dht=disabled
+		handler := server.Handler(&composableRouter{dht: nil})
+		srv := httptest.NewServer(handler)
+		t.Cleanup(srv.Close)
+
+		urlStr := fmt.Sprintf("http://%s/routing/v1/dht/closest/peers/%s", srv.Listener.Addr().String(), key.String())
+		req, err := http.NewRequest(http.MethodGet, urlStr, nil)
+		require.NoError(t, err)
+		req.Header.Set("Accept", mediaTypeJSON)
+
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+
+		// Returns 500 Internal Server Error instead of misleading 200 with empty results
+		require.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.Contains(t, string(body), "not supported")
+	})
 }
 
 // mockDHTRouter implements the router interface for testing
