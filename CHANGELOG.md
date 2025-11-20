@@ -15,14 +15,27 @@ The following emojis are used to highlight certain changes:
 
 ### Added
 
-- AutoConf support: automatic configuration of bootstrap peers and delegated routing endpoints ([#123](https://github.com/ipfs/someguy/pull/123)). When enabled (default), the `auto` placeholder is replaced with network-recommended values.
-  - All endpoint flags (`--provider-endpoints`, `--peer-endpoints`, `--ipns-endpoints`) default to `auto`
-  - See [environment-variables.md](docs/environment-variables.md#someguy_autoconf) for configuration details
-- Added `/routing/v1/peers/closest/{key}` endpoint implementing [IPIP-476](https://github.com/ipfs/specs/pull/476)
+### Changed
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [v0.11.0] - 2025-11-20
+
+### Added
+
+- Added support for [IPIP-476](https://github.com/ipfs/specs/pull/476): `/routing/v1/peers/closest/{key}` endpoint for finding DHT-closest peers ([#124](https://github.com/ipfs/someguy/pull/124), [#127](https://github.com/ipfs/someguy/pull/127))
   - Returns DHT-closest peers to a given CID or PeerID
   - Accepts both CID and legacy PeerID formats (e.g., `12D3KooW...`)
   - Uses WAN DHT only for more reliable results
   - Includes cached addresses in results when available
+  - Properly returns HTTP 500 when DHT is disabled
+- AutoConf support: automatic configuration of bootstrap peers and delegated routing endpoints ([#123](https://github.com/ipfs/someguy/pull/123)). When enabled (default), the `auto` placeholder is replaced with network-recommended values.
+  - All endpoint flags (`--provider-endpoints`, `--peer-endpoints`, `--ipns-endpoints`) default to `auto`
+  - See [environment-variables.md](https://github.com/ipfs/someguy/blob/main/docs/environment-variables.md#someguy_autoconf) for configuration details
 
 ### Changed
 
@@ -34,6 +47,8 @@ The following emojis are used to highlight certain changes:
 ### Removed
 
 ### Fixed
+
+- Fixed multiple race conditions and deadlocks in iterator implementations ([#119](https://github.com/ipfs/someguy/pull/119))
 
 ### Security
 
