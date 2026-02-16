@@ -78,8 +78,7 @@ func TestBackground(t *testing.T) {
 }
 
 func TestProbePeers(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	// Create a test libp2p host
 	mockHost := &mockHost{}
