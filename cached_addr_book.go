@@ -147,7 +147,7 @@ func newCachedAddrBook(opts ...AddrBookOption) (*cachedAddrBook, error) {
 }
 
 func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
-	sub, err := host.EventBus().Subscribe([]interface{}{
+	sub, err := host.EventBus().Subscribe([]any{
 		&event.EvtPeerIdentificationCompleted{},
 		&event.EvtPeerConnectednessChanged{},
 	})

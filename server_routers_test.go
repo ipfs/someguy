@@ -596,8 +596,7 @@ func TestManyIter(t *testing.T) {
 	t.Run("Sequence", func(t *testing.T) {
 		t.Parallel()
 
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 
 		its := newMockIters[int](ctx, 2)
 		manyIter := newManyIter(ctx, mockItersAsInterface(its))
@@ -632,8 +631,7 @@ func TestManyIter(t *testing.T) {
 	t.Run("Closed Iterator", func(t *testing.T) {
 		t.Parallel()
 
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 
 		its := newMockIters[int](ctx, 5)
 		manyIter := newManyIter(ctx, mockItersAsInterface(its))

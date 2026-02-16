@@ -82,9 +82,9 @@ func normalizeEndpointURL(url, expectedPath, flagName string) (string, error) {
 	}
 
 	// Check if URL has the expected routing path
-	if strings.HasSuffix(url, expectedPath) {
+	if before, ok := strings.CutSuffix(url, expectedPath); ok {
 		// Strip the expected path to get base URL
-		return strings.TrimSuffix(url, expectedPath), nil
+		return before, nil
 	}
 
 	// Check if URL has a different routing path (potential misconfiguration)

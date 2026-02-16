@@ -50,7 +50,7 @@ func makePeerRecords(t *testing.T, count int) ([]iter.Result[*types.PeerRecord],
 	var peerRecords []iter.Result[*types.PeerRecord]
 	var peerIDs []peer.ID
 
-	for i := 0; i < count; i++ {
+	for i := range count {
 		_, p := makeEd25519PeerID(t)
 		peerIDs = append(peerIDs, p)
 
