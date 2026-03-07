@@ -86,12 +86,15 @@ var (
 )
 
 type peerState struct {
-	lastConnTime       time.Time // last time we successfully connected to this peer
-	lastFailedConnTime time.Time // last time we failed to find or connect to this peer
-	connectFailures    uint      // number of times we've failed to connect to this peer
+	lastConnTime       time.Time    // last time we successfully connected to this peer
+	lastFailedConnTime time.Time    // last time we failed to find or connect to this peer
+	connectFailures    uint         // number of times we've failed to connect to this peer
+	connectedAddr      ma.Multiaddr // public addr from last successful connection (for stale addr filtering)
+	lastProbeTime      time.Time    // last time we probed this peer's individual addrs
 }
 
 type cachedAddrBook struct {
+	mu                   sync.Mutex                     // protects peerCache read-modify-write sequences
 	addrBook             peerstore.AddrBook             // memory address book
 	peerCache            *lru.Cache[peer.ID, peerState] // LRU cache with additional metadata about peer
 	probingEnabled       bool
@@ -174,6 +177,7 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 		case ev := <-sub.Out():
 			switch ev := ev.(type) {
 			case event.EvtPeerIdentificationCompleted:
+				cab.mu.Lock()
 				pState, exists := cab.peerCache.Peek(ev.Peer)
 				if !exists {
 					pState = peerState{}
@@ -181,7 +185,9 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 				pState.lastConnTime = time.Now()
 				pState.lastFailedConnTime = time.Time{} // reset failed connection time
 				pState.connectFailures = 0              // reset connect failures on successful connection
+				pState.connectedAddr = ev.Conn.RemoteMultiaddr()
 				cab.peerCache.Add(ev.Peer, pState)
+				cab.mu.Unlock()
 				peerStateSize.Set(float64(cab.peerCache.Len())) // update metric
 
 				ttl := cab.getTTL(host.Network().Connectedness(ev.Peer))
@@ -198,6 +204,18 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 					logger.Debug("No signed peer record, caching listen addresses")
 					// We don't have a signed peer record, so we use the listen addresses
 					cab.addrBook.AddAddrs(ev.Peer, ev.ListenAddrs, ttl)
+				}
+
+				// Remove stale addrs (same IP+L4 protocol, different port) from cache.
+				// Some DHT peers never expire old observed addresses, so peers with
+				// dynamic ports (UPnP) accumulate many dead addresses over time.
+				// Without cleanup, clients waste time dialing dead ports, making
+				// self-hosted peers on consumer networks effectively unreachable.
+
+				if stale := findStalePortAddrs(cab.addrBook.Addrs(ev.Peer), pState.connectedAddr); len(stale) > 0 {
+					cab.addrBook.SetAddrs(ev.Peer, stale, 0)
+					logger.Debugw("removed stale addresses from cache",
+						"peer", ev.Peer, "removed", len(stale))
 				}
 			case event.EvtPeerConnectednessChanged:
 				// If the peer is not connected or limited, we update the TTL
@@ -300,6 +318,7 @@ func (cab *cachedAddrBook) GetCachedAddrs(p peer.ID) []types.Multiaddr {
 // Update the peer cache with information about a failed connection
 // This should be called when a connection attempt to a peer fails
 func (cab *cachedAddrBook) RecordFailedConnection(p peer.ID) {
+	cab.mu.Lock()
 	pState, exists := cab.peerCache.Peek(p)
 	if !exists {
 		pState = peerState{}
@@ -309,6 +328,7 @@ func (cab *cachedAddrBook) RecordFailedConnection(p peer.ID) {
 	// we opportunistically remove the dead peer from cache to save time on probing it further
 	if exists && pState.connectFailures > 1 && now.Sub(pState.lastFailedConnTime) > MaxBackoffDuration {
 		cab.peerCache.Remove(p)
+		cab.mu.Unlock()
 		peerStateSize.Set(float64(cab.peerCache.Len())) // update metric
 		// remove the peer from the addr book. Otherwise it will be probed again in the probe loop
 		cab.addrBook.ClearAddrs(p)
@@ -317,6 +337,7 @@ func (cab *cachedAddrBook) RecordFailedConnection(p peer.ID) {
 	pState.lastFailedConnTime = now
 	pState.connectFailures++
 	cab.peerCache.Add(p, pState)
+	cab.mu.Unlock()
 }
 
 // Returns true if we should probe a peer (either by dialing known addresses or by dispatching a FindPeer)
@@ -340,6 +361,37 @@ func (cab *cachedAddrBook) ShouldProbePeer(p peer.ID) bool {
 
 	// Only dispatch if we've waited long enough based on the backoff
 	return time.Since(pState.lastFailedConnTime) > backoffDuration
+}
+
+// getConnectedAddr returns the public multiaddr used for the last successful
+// connection to this peer, or nil if unknown.
+func (cab *cachedAddrBook) getConnectedAddr(p peer.ID) ma.Multiaddr {
+	pState, exists := cab.peerCache.Peek(p)
+	if !exists {
+		return nil
+	}
+	return pState.connectedAddr
+}
+
+// wasRecentlyProbed returns true if the peer was probed within ProbeInterval.
+func (cab *cachedAddrBook) wasRecentlyProbed(p peer.ID) bool {
+	pState, exists := cab.peerCache.Peek(p)
+	if !exists {
+		return false
+	}
+	return time.Since(pState.lastProbeTime) < ProbeInterval
+}
+
+// recordProbe records the current time as the last probe time for the peer.
+func (cab *cachedAddrBook) recordProbe(p peer.ID) {
+	cab.mu.Lock()
+	pState, exists := cab.peerCache.Peek(p)
+	if !exists {
+		pState = peerState{}
+	}
+	pState.lastProbeTime = time.Now()
+	cab.peerCache.Add(p, pState)
+	cab.mu.Unlock()
 }
 
 func hasValidConnectedness(connectedness network.Connectedness) bool {

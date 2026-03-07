@@ -79,6 +79,7 @@ type config struct {
 	dhtType                     string
 	cachedAddrBook              bool
 	cachedAddrBookActiveProbing bool
+	cachedAddrBookStaleProbing  bool
 	cachedAddrBookRecentTTL     time.Duration
 
 	contentEndpoints       []string
@@ -194,17 +195,47 @@ func start(ctx context.Context, cfg *config) error {
 	}
 
 	// Combine HTTP routers with DHT and additional routers
-	crRouters := combineRouters(h, dhtRouting, cachedAddrBook, providerHTTPRouters, blockProviderRouters)
-	prRouters := combineRouters(h, dhtRouting, cachedAddrBook, peerHTTPRouters, nil)
+	var crRouters router = combineRouters(h, dhtRouting, cachedAddrBook, providerHTTPRouters, blockProviderRouters)
+	var prRouters router = combineRouters(h, dhtRouting, cachedAddrBook, peerHTTPRouters, nil)
 	ipnsRouters := combineRouters(h, dhtRouting, cachedAddrBook, ipnsHTTPRouters, nil)
+
+	// Create addr prober for active per-addr probing of suspicious addr sets.
+	// This uses ephemeral libp2p hosts to probe individual addrs and filter
+	// dead ones (stale UPnP ports, changed IPs) before returning results.
+	var prober *addrProber
+	if cachedAddrBook != nil && cfg.cachedAddrBookStaleProbing {
+		var proberErr error
+		prober, proberErr = newAddrProber(10, 5*time.Second)
+		if proberErr != nil {
+			logger.Warnf("failed to create addr prober, stale addr probing disabled: %v", proberErr)
+		}
+	}
+
+	// Wrap provider and peer routers with stale addr filtering.
+	// Some DHT peers never expire old observed addresses, so peers with
+	// dynamic ports (e.g. UPnP) accumulate many stale addresses that no
+	// longer work. This causes clients to waste time dialing dead ports,
+	// effectively making self-hosted peers on consumer networks unreachable.
+	// This wrapper filters responses from ALL sources (delegated HTTP + DHT)
+	// using known-good addresses from previous successful connections.
+	// When prober is available, first-encounter peers with suspicious addr
+	// sets (multi-port, multi-IP) are actively probed per-addr.
+	if cachedAddrBook != nil {
+		crRouters = sanitizeRouter{router: crRouters, cab: cachedAddrBook, prober: prober}
+		prRouters = sanitizeRouter{router: prRouters, cab: cachedAddrBook, prober: prober}
+	}
 
 	// Create DHT router for GetClosestPeers endpoint
 	var dhtRouters router
 	if cachedAddrBook != nil && dhtRouting != nil {
 		cachedRouter := NewCachedRouter(libp2pRouter{host: h, routing: dhtRouting}, cachedAddrBook)
-		dhtRouters = sanitizeRouter{cachedRouter}
+		dhtRouters = sanitizeRouter{router: cachedRouter, cab: cachedAddrBook, prober: prober}
 	} else if dhtRouting != nil {
-		dhtRouters = sanitizeRouter{libp2pRouter{host: h, routing: dhtRouting}}
+		dhtRouters = sanitizeRouter{router: libp2pRouter{host: h, routing: dhtRouting}}
+	}
+
+	if prober != nil {
+		defer prober.close()
 	}
 
 	_, port, err := net.SplitHostPort(cfg.listenAddress)
@@ -340,9 +371,9 @@ func combineRouters(h host.Host, dht routing.Routing, cachedAddrBook *cachedAddr
 
 	if cachedAddrBook != nil {
 		cachedRouter := NewCachedRouter(libp2pRouter{host: h, routing: dht}, cachedAddrBook)
-		dhtRouter = sanitizeRouter{cachedRouter}
+		dhtRouter = sanitizeRouter{router: cachedRouter}
 	} else if dht != nil {
-		dhtRouter = sanitizeRouter{libp2pRouter{host: h, routing: dht}}
+		dhtRouter = sanitizeRouter{router: libp2pRouter{host: h, routing: dht}}
 	}
 
 	if len(delegatedRouters) == 0 && len(additionalRouters) == 0 {

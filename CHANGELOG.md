@@ -21,6 +21,10 @@ The following emojis are used to highlight certain changes:
 
 ### Fixed
 
+- ✨ Some faulty third-party DHT peers never expire old observed addresses. Peers with dynamic ports (e.g. UPnP on consumer routers) or changing IPs (roaming, ISP changes) accumulate dead addresses over time. A provider record with 60 stale addresses before the one that works makes the peer effectively unreachable, degrading routing results for everyone downstream of someguy. This release adds two layers of stale address filtering:
+  - **Passive filtering** (fast, inline): after a successful connection, someguy remembers the working address and strips addresses on the same IP and transport that have a different (outdated) port.
+  - **Active probing** (async, non-blocking, controlled by `SOMEGUY_CACHED_ADDR_BOOK_STALE_PROBING`): on first encounter, when a peer's address set looks suspicious (multiple ports per IP, or more than 3 IPs per address family), each unique address is probed in the background with an ephemeral libp2p handshake. Records that don't need probing stream through immediately; probed results appear at the end of the response once the handshakes complete. If every probe fails (peer offline), all addresses are returned unchanged (fail-open).
+
 ### Security
 
 ## [v0.11.1]
