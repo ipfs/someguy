@@ -183,7 +183,7 @@ func TestShouldProbePeer(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.peerState != (peerState{}) {
+			if tt.peerState.connectFailures > 0 || !tt.peerState.lastFailedConnTime.IsZero() {
 				cab.peerCache.Add(testPeer, tt.peerState)
 			}
 			result := cab.ShouldProbePeer(testPeer)

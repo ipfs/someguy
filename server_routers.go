@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ipfs/boxo/ipns"
@@ -511,8 +512,23 @@ func (it *peerChanIter) Close() error {
 
 var _ server.ContentRouter = sanitizeRouter{}
 
+// sanitizeRouter wraps a router with address filtering applied to every
+// response. Filtering happens in two stages:
+//
+//  1. Fast inline stage (filterAddrs via iter.Map): strips private addrs
+//     and, when a known-good connected addr exists, applies passive
+//     stale-port filtering.
+//
+//  2. Async probing stage (probeFilterIter): for first-encounter peers
+//     whose addr sets look suspicious (multi-port, multi-IP), dispatches
+//     per-addr probing in background goroutines so the NDJSON stream is
+//     not blocked. Probed results appear after non-probed records.
+//
+// Stage 2 is only active when both cab and prober are set.
 type sanitizeRouter struct {
 	router
+	cab    *cachedAddrBook // optional: enables passive stale addr filtering
+	prober *addrProber     // optional: enables active per-addr probing
 }
 
 func (r sanitizeRouter) FindProviders(ctx context.Context, key cid.Cid, limit int) (iter.ResultIter[types.Record], error) {
@@ -521,7 +537,8 @@ func (r sanitizeRouter) FindProviders(ctx context.Context, key cid.Cid, limit in
 		return nil, err
 	}
 
-	return iter.Map(it, func(v iter.Result[types.Record]) iter.Result[types.Record] {
+	// Stage 1 (fast, inline): strip private addrs + passive stale-port filtering
+	filtered := iter.Map(it, func(v iter.Result[types.Record]) iter.Result[types.Record] {
 		if v.Err != nil || v.Val == nil {
 			return v
 		}
@@ -530,11 +547,11 @@ func (r sanitizeRouter) FindProviders(ctx context.Context, key cid.Cid, limit in
 		case types.SchemaPeer:
 			result, ok := v.Val.(*types.PeerRecord)
 			if !ok {
-				logger.Errorw("problem casting find providers result", "Schema", v.Val.GetSchema(), "Type", reflect.TypeOf(v).String())
+				logger.Errorw("problem casting find providers result", "Schema", v.Val.GetSchema(), "Type", reflect.TypeFor[iter.Result[types.Record]]().String())
 				return v
 			}
 
-			result.Addrs = filterPrivateMultiaddr(result.Addrs)
+			result.Addrs = r.filterAddrs(*result.ID, result.Addrs)
 			v.Val = result
 
 		//lint:ignore SA1019 // ignore staticcheck
@@ -542,7 +559,7 @@ func (r sanitizeRouter) FindProviders(ctx context.Context, key cid.Cid, limit in
 			//lint:ignore SA1019 // ignore staticcheck
 			result, ok := v.Val.(*types.BitswapRecord)
 			if !ok {
-				logger.Errorw("problem casting find providers result", "Schema", v.Val.GetSchema(), "Type", reflect.TypeOf(v).String())
+				logger.Errorw("problem casting find providers result", "Schema", v.Val.GetSchema(), "Type", reflect.TypeFor[iter.Result[types.Record]]().String())
 				return v
 			}
 
@@ -551,7 +568,14 @@ func (r sanitizeRouter) FindProviders(ctx context.Context, key cid.Cid, limit in
 		}
 
 		return v
-	}), nil
+	})
+
+	// Stage 2 (async): wrap with probeFilterIter for per-addr probing
+	// of first-encounter peers with suspicious addr sets.
+	if r.prober != nil && r.cab != nil {
+		return newProbeFilterIter(filtered, r, ctx), nil
+	}
+	return filtered, nil
 }
 
 func (r sanitizeRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
@@ -560,14 +584,19 @@ func (r sanitizeRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (
 		return nil, err
 	}
 
-	return iter.Map(it, func(v iter.Result[*types.PeerRecord]) iter.Result[*types.PeerRecord] {
+	filtered := iter.Map(it, func(v iter.Result[*types.PeerRecord]) iter.Result[*types.PeerRecord] {
 		if v.Err != nil || v.Val == nil {
 			return v
 		}
 
-		v.Val.Addrs = filterPrivateMultiaddr(v.Val.Addrs)
+		v.Val.Addrs = r.filterAddrs(*v.Val.ID, v.Val.Addrs)
 		return v
-	}), nil
+	})
+
+	if r.prober != nil && r.cab != nil {
+		return r.applyProbeFiltering(filtered, ctx), nil
+	}
+	return filtered, nil
 }
 
 func (r sanitizeRouter) GetClosestPeers(ctx context.Context, key cid.Cid) (iter.ResultIter[*types.PeerRecord], error) {
@@ -576,19 +605,202 @@ func (r sanitizeRouter) GetClosestPeers(ctx context.Context, key cid.Cid) (iter.
 		return nil, err
 	}
 
-	return iter.Map(it, func(v iter.Result[*types.PeerRecord]) iter.Result[*types.PeerRecord] {
+	filtered := iter.Map(it, func(v iter.Result[*types.PeerRecord]) iter.Result[*types.PeerRecord] {
 		if v.Err != nil || v.Val == nil {
 			return v
 		}
 
-		v.Val.Addrs = filterPrivateMultiaddr(v.Val.Addrs)
+		v.Val.Addrs = r.filterAddrs(*v.Val.ID, v.Val.Addrs)
 		return v
-	}), nil
+	})
+
+	if r.prober != nil && r.cab != nil {
+		return r.applyProbeFiltering(filtered, ctx), nil
+	}
+	return filtered, nil
 }
 
 //lint:ignore SA1019 // ignore staticcheck
 func (r sanitizeRouter) ProvideBitswap(ctx context.Context, req *server.BitswapWriteProvideRequest) (time.Duration, error) {
 	return 0, routing.ErrNotSupported
+}
+
+// filterAddrs applies fast address filters: removes private addrs and,
+// when cached addr book has a known-good connected addr, removes stale
+// addresses on the same IP with a different port. Does not do active
+// probing (that is handled asynchronously by probeFilterIter).
+func (r sanitizeRouter) filterAddrs(pid peer.ID, addrs []types.Multiaddr) []types.Multiaddr {
+	addrs = filterPrivateMultiaddr(addrs)
+	if r.cab != nil {
+		if connAddr := r.cab.getConnectedAddr(pid); connAddr != nil {
+			addrs = filterStalePortAddrs(addrs, connAddr)
+		}
+	}
+	return addrs
+}
+
+// applyProbeFiltering wraps a *types.PeerRecord iterator with async probing.
+// Since probeFilterIter operates on types.Record, this converts PeerRecord
+// to Record and back, following the same pattern as applyPeerRecordCaching
+// in server_cached_router.go.
+func (r sanitizeRouter) applyProbeFiltering(it iter.ResultIter[*types.PeerRecord], ctx context.Context) iter.ResultIter[*types.PeerRecord] {
+	recordIter := iter.Map(it, func(v iter.Result[*types.PeerRecord]) iter.Result[types.Record] {
+		if v.Err != nil {
+			return iter.Result[types.Record]{Err: v.Err}
+		}
+		return iter.Result[types.Record]{Val: v.Val}
+	})
+
+	probeIter := newProbeFilterIter(recordIter, r, ctx)
+
+	return iter.Map(probeIter, func(v iter.Result[types.Record]) iter.Result[*types.PeerRecord] {
+		if v.Err != nil {
+			return iter.Result[*types.PeerRecord]{Err: v.Err}
+		}
+		peerRec, ok := v.Val.(*types.PeerRecord)
+		if !ok {
+			return iter.Result[*types.PeerRecord]{Err: errors.New("unexpected record type in probe filter")}
+		}
+		return iter.Result[*types.PeerRecord]{Val: peerRec}
+	})
+}
+
+var _ iter.ResultIter[types.Record] = &probeFilterIter{}
+
+// probeFilterIter wraps a types.Record iterator and dispatches per-addr
+// probing asynchronously for peers whose address sets look suspicious
+// (multiple ports per IP, or multiple IPs per address family).
+//
+// It follows the same async pattern as cacheFallbackIter (server_cached_router.go):
+//
+//  1. Pull records from the source iterator one at a time.
+//  2. If a PeerRecord needs probing (needsProbing == true, not recently probed),
+//     dispatch probing in a background goroutine and move to the next record
+//     without blocking the stream.
+//  3. Records that don't need probing pass through immediately.
+//  4. After the source is exhausted, drain pending probe results from the
+//     probeResults channel before signaling completion.
+//
+// This ensures the NDJSON stream starts flowing immediately for non-probed
+// peers, and probed peers appear at the end once their handshakes complete.
+type probeFilterIter struct {
+	sourceIter    iter.ResultIter[types.Record]
+	current       iter.Result[types.Record]
+	probeResults  chan iter.Result[types.Record] // receives results from background dispatchProbe goroutines
+	router        sanitizeRouter
+	ctx           context.Context
+	cancel        context.CancelFunc
+	ongoingProbes atomic.Int32 // tracks in-flight dispatchProbe goroutines
+}
+
+func newProbeFilterIter(sourceIter iter.ResultIter[types.Record], r sanitizeRouter, ctx context.Context) *probeFilterIter {
+	ctx, cancel := context.WithCancel(ctx)
+	return &probeFilterIter{
+		sourceIter:   sourceIter,
+		router:       r,
+		ctx:          ctx,
+		cancel:       cancel,
+		probeResults: make(chan iter.Result[types.Record], 100),
+	}
+}
+
+func (it *probeFilterIter) Next() bool {
+	for {
+		// Phase 1: pull from source iterator, pass through or dispatch probing.
+		if it.sourceIter.Next() {
+			val := it.sourceIter.Val()
+			if val.Err != nil || val.Val == nil {
+				it.current = val
+				return true
+			}
+
+			// only PeerRecords can be probed; pass through other schemas
+			if val.Val.GetSchema() != types.SchemaPeer {
+				it.current = val
+				return true
+			}
+
+			record, ok := val.Val.(*types.PeerRecord)
+			if !ok || record.ID == nil {
+				it.current = val
+				return true
+			}
+
+			// if the addr set looks suspicious and we haven't probed recently,
+			// dispatch probing in the background and skip to next record
+			if needsProbing(record.Addrs) && !it.router.cab.wasRecentlyProbed(*record.ID) {
+				it.router.cab.recordProbe(*record.ID)
+				it.ongoingProbes.Add(1) // must increment before goroutine launch
+				go it.dispatchProbe(record)
+				continue
+			}
+
+			// addr set looks clean, pass through immediately
+			it.current = val
+			return true
+		}
+
+		// Phase 2: source exhausted, wait for in-flight probe goroutines.
+		// Same drain pattern as cacheFallbackIter: poll ongoingProbes with
+		// a short timer to avoid deadlock if count reaches 0 between check
+		// and channel read.
+		if it.ongoingProbes.Load() == 0 {
+			return false
+		}
+
+		timer := time.NewTimer(100 * time.Millisecond)
+		select {
+		case result, ok := <-it.probeResults:
+			timer.Stop()
+			if !ok {
+				return false
+			}
+			it.current = result
+			return true
+		case <-it.ctx.Done():
+			timer.Stop()
+			return false
+		case <-timer.C:
+			// timeout, loop back to recheck ongoingProbes
+		}
+	}
+}
+
+func (it *probeFilterIter) Val() iter.Result[types.Record] {
+	if it.current.Val != nil || it.current.Err != nil {
+		return it.current
+	}
+	return iter.Result[types.Record]{Err: errNoValueAvailable}
+}
+
+func (it *probeFilterIter) Close() error {
+	if it.cancel != nil {
+		it.cancel()
+	}
+	return it.sourceIter.Close()
+}
+
+// dispatchProbe runs in a background goroutine. It probes all addrs for
+// the peer (via addrProber.probeAddrs which handles dedup and fail-open),
+// updates the record's addr list, and sends it back through probeResults.
+func (it *probeFilterIter) dispatchProbe(record *types.PeerRecord) {
+	defer it.ongoingProbes.Add(-1)
+
+	probed := it.router.prober.probeAddrs(it.ctx, *record.ID, record.Addrs)
+	record.Addrs = probed
+
+	if it.ctx.Err() != nil {
+		return
+	}
+
+	select {
+	case it.probeResults <- iter.Result[types.Record]{Val: record}:
+	case <-it.ctx.Done():
+	default:
+		// channel full or nobody listening, drop the result.
+		// this is best-effort -- same as cacheFallbackIter.dispatchFindPeer
+		logger.Debugw("dropping probe result, channel full", "peer", record.ID)
+	}
 }
 
 func filterPrivateMultiaddr(a []types.Multiaddr) []types.Multiaddr {
