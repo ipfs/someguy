@@ -22,11 +22,12 @@ import (
 func main() {
 	app := &cli.App{
 		Name:    name,
-		Usage:   "A Delegated Routing V1 server and proxy for all your routing needs.",
+		Usage:   "Delegated Routing V1 server and proxy.",
 		Version: version,
 		Commands: []*cli.Command{
 			{
-				Name: "start",
+				Name:  "start",
+				Usage: "Run a Delegated Routing V1 server",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
 						Name:    "listen-address",
@@ -38,7 +39,7 @@ func main() {
 						Name:    "dht",
 						Value:   "accelerated",
 						EnvVars: []string{"SOMEGUY_DHT"},
-						Usage:   "mode with which to run the Amino DHT client. Options are 'accelerated' or 'standard' or 'disabled'.",
+						Usage:   "Amino DHT client mode: 'accelerated', 'standard', or 'disabled'",
 					},
 					&cli.BoolFlag{
 						Name:    "cached-addr-book",
@@ -63,34 +64,41 @@ func main() {
 						Name:    "provider-endpoints",
 						Value:   cli.NewStringSlice(autoconf.AutoPlaceholder),
 						EnvVars: []string{"SOMEGUY_PROVIDER_ENDPOINTS"},
-						Usage:   "other Delegated Routing V1 endpoints to proxy provider requests to",
+						Usage:   "additional Delegated Routing V1 endpoints for provider lookups",
 					},
 					&cli.StringSliceFlag{
 						Name:    "http-block-provider-endpoints",
 						Value:   nil,
 						EnvVars: []string{"SOMEGUY_HTTP_BLOCK_PROVIDER_ENDPOINTS"},
-						Usage:   "list of HTTP trustless gateway endpoints to proxy provider requests to",
+						Usage:   "HTTP trustless gateway endpoints used to synthesize provider records",
 					},
 					&cli.StringSliceFlag{
 						Name:    "http-block-provider-peerids",
 						Value:   nil,
 						EnvVars: []string{"SOMEGUY_HTTP_BLOCK_PROVIDER_PEERIDS"},
-						Usage:   "list of peerIDs for the HTTP trustless gateway endpoints to proxy provider requests to",
+						Usage:   "PeerIDs to pair with --http-block-provider-endpoints (matching order)",
 					},
 					&cli.StringSliceFlag{
 						Name:    "peer-endpoints",
 						Value:   cli.NewStringSlice(autoconf.AutoPlaceholder),
 						EnvVars: []string{"SOMEGUY_PEER_ENDPOINTS"},
-						Usage:   "other Delegated Routing V1 endpoints to proxy peer requests to",
+						Usage:   "additional Delegated Routing V1 endpoints for peer lookups",
 					},
 					&cli.StringSliceFlag{
 						Name:    "ipns-endpoints",
 						Value:   cli.NewStringSlice(autoconf.AutoPlaceholder),
 						EnvVars: []string{"SOMEGUY_IPNS_ENDPOINTS"},
-						Usage:   "other Delegated Routing V1 endpoints to proxy IPNS requests to",
+						Usage:   "additional Delegated Routing V1 endpoints for IPNS records",
 					},
 					&cli.StringSliceFlag{
 						Name: "libp2p-listen-addrs",
+						// These defaults mirror libp2p.DefaultListenAddrs paired with
+						// libp2p.DefaultTransports (see newHost), but on port 4004 to avoid
+						// colliding with Kubo's 4001. Reviewer/LLM note: when bumping
+						// go-libp2p, diff libp2p.DefaultListenAddrs and
+						// libp2p.DefaultTransports (both in go-libp2p defaults.go) against
+						// this list. If the transport set drifts, update this slice and
+						// double-check that docs/environment-variables.md still matches.
 						Value: cli.NewStringSlice(
 							"/ip4/0.0.0.0/tcp/4004",
 							"/ip4/0.0.0.0/udp/4004/quic-v1",
@@ -101,7 +109,7 @@ func main() {
 							"/ip6/::/udp/4004/webrtc-direct",
 							"/ip6/::/udp/4004/quic-v1/webtransport"),
 						EnvVars: []string{"SOMEGUY_LIBP2P_LISTEN_ADDRS"},
-						Usage:   "Multiaddresses for libp2p host to listen on (comma-separated)",
+						Usage:   "libp2p listen multiaddresses (comma-separated)",
 					},
 					&cli.IntFlag{
 						Name:    "libp2p-connmgr-low",
@@ -137,13 +145,13 @@ func main() {
 						Name:    "tracing-auth",
 						Value:   "",
 						EnvVars: []string{"SOMEGUY_TRACING_AUTH"},
-						Usage:   "If set the key gates use of the Traceparent header by requiring the key to be passed in the Authorization header",
+						Usage:   "If set, requires clients to pass this value in the Authorization header before Traceparent is honored",
 					},
 					&cli.Float64Flag{
 						Name:    "sampling-fraction",
 						Value:   0,
 						EnvVars: []string{"SOMEGUY_SAMPLING_FRACTION"},
-						Usage:   "Rate at which to sample gateway requests. Does not include requests with traceheaders which will always sample",
+						Usage:   "Fraction of routing requests to sample (0 to 1). Requests with Traceparent headers are always sampled, independent of this setting",
 					},
 					&cli.StringFlag{
 						Name:    "datadir",
@@ -236,17 +244,18 @@ func main() {
 				},
 			},
 			{
-				Name: "ask",
+				Name:  "ask",
+				Usage: "Query a Delegated Routing V1 server",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
 						Name:  "endpoint",
 						Value: autoconf.AutoPlaceholder,
-						Usage: "the Delegated Routing V1 endpoint to ask",
+						Usage: "Delegated Routing V1 endpoint to query",
 					},
 					&cli.BoolFlag{
 						Name:  "pretty",
 						Value: false,
-						Usage: "output data in a prettier format that may convey less information",
+						Usage: "pretty-print output (may omit some fields)",
 					},
 					&cli.StringFlag{
 						Name:    "datadir",
@@ -276,8 +285,8 @@ func main() {
 				Subcommands: []*cli.Command{
 					{
 						Name:      "findprovs",
-						Usage:     "findprovs <cid>",
-						UsageText: "Find providers of a given CID",
+						Usage:     "Find providers of a given CID",
+						ArgsUsage: "<cid>",
 						Action: func(ctx *cli.Context) error {
 							if ctx.NArg() != 1 {
 								return errors.New("invalid command, see help")
@@ -319,8 +328,8 @@ func main() {
 					},
 					{
 						Name:      "findpeers",
-						Usage:     "findpeers <pid>",
-						UsageText: "Find a peer of a given PID",
+						Usage:     "Find a peer by peer ID",
+						ArgsUsage: "<pid>",
 						Action: func(ctx *cli.Context) error {
 							if ctx.NArg() != 1 {
 								return errors.New("invalid command, see help")
@@ -361,8 +370,8 @@ func main() {
 					},
 					{
 						Name:      "getclosestpeers",
-						Usage:     "getclosestpeers <key>",
-						UsageText: "Find DHT-closest peers to a key (CID or peer ID)",
+						Usage:     "Find DHT-closest peers to a key (CID or peer ID)",
+						ArgsUsage: "<key>",
 						Action: func(ctx *cli.Context) error {
 							if ctx.NArg() != 1 {
 								return errors.New("invalid command, see help")
@@ -377,8 +386,8 @@ func main() {
 					},
 					{
 						Name:      "getipns",
-						Usage:     "getipns <ipns-id>",
-						UsageText: "Get the value of an IPNS ID",
+						Usage:     "Get the value of an IPNS name",
+						ArgsUsage: "<ipns-id>",
 						Action: func(ctx *cli.Context) error {
 							if ctx.NArg() != 1 {
 								return errors.New("invalid command, see help")
@@ -393,8 +402,8 @@ func main() {
 					},
 					{
 						Name:      "putipns",
-						Usage:     "putipns <ipns-id> <multibase-encoded-record>",
-						UsageText: "Put an IPNS record",
+						Usage:     "Publish an IPNS record",
+						ArgsUsage: "<ipns-id> <multibase-encoded-record>",
 						Flags:     []cli.Flag{},
 						Action: func(ctx *cli.Context) error {
 							if ctx.NArg() != 2 {
