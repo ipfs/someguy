@@ -1,6 +1,6 @@
 # Someguy Environment Variables
 
-`someguy` ships with some implicit defaults that can be adjusted via env variables below.
+The environment variables below override `someguy`'s built-in defaults.
 
 - [Configuration](#configuration)
   - [`SOMEGUY_LISTEN_ADDRESS`](#someguy_listen_address)
@@ -47,19 +47,19 @@ Default: `accelerated`
 
 ### `SOMEGUY_CACHED_ADDR_BOOK`
 
-Whether or not the Cached Address Book is enabled or not. If disabled, someguy will not return cached addresses for peers without multiaddrs in `FindProviders`.
+Enables the cached address book. When disabled, Someguy omits cached addresses from `FindProviders` results for peers lacking multiaddrs.
 
 Default: `true`
 
 ### `SOMEGUY_CACHED_ADDR_BOOK_RECENT_TTL`
 
-The TTL for recently connected peers' multiaddrs in the cached address book. Only applies if `SOMEGUY_CACHED_ADDR_BOOK` is enabled.
+TTL for recently connected peers' multiaddrs in the cached address book. Applies only when `SOMEGUY_CACHED_ADDR_BOOK` is enabled.
 
 Default: `48h`
 
 ### `SOMEGUY_CACHED_ADDR_BOOK_ACTIVE_PROBING`
 
-Whether or not the Cached Address Book should actively probe peers in cache to keep their multiaddrs up to date. Only applies if `SOMEGUY_CACHED_ADDR_BOOK` is enabled.
+Enables active probing of cached peers to keep their multiaddrs up to date. Applies only when `SOMEGUY_CACHED_ADDR_BOOK` is enabled.
 
 Default: `true`
 
@@ -71,7 +71,7 @@ Supports two URL formats:
 - Base URL without path: `https://example.com`
 - Full URL with path: `https://example.com/routing/v1/providers`
 
-When using the `auto` placeholder (default), endpoints are automatically configured from the network configuration at [`SOMEGUY_AUTOCONF_URL`](#someguy_autoconf_url).
+The `auto` placeholder (default) resolves to endpoints from the network configuration at [`SOMEGUY_AUTOCONF_URL`](#someguy_autoconf_url).
 
 Default: `auto`
 
@@ -91,11 +91,11 @@ URL formats: same as [`SOMEGUY_PROVIDER_ENDPOINTS`](#someguy_provider_endpoints)
 
 Default: `auto`
 
-###  `SOMEGUY_AUTOCONF`
+### `SOMEGUY_AUTOCONF`
 
-Enable or disable automatic configuration (autoconf) of delegated routing endpoints and bootstrap peers.
+Enables automatic configuration (autoconf) of delegated routing endpoints and bootstrap peers.
 
-When enabled, the `auto` placeholder in endpoint configuration is replaced with network-recommended values fetched from the autoconf URL.
+When enabled, Someguy replaces the `auto` placeholder in endpoint configuration with network-recommended values fetched from the autoconf URL.
 
 Default: `true`
 
@@ -113,9 +113,9 @@ Default: `24h`
 
 ### `SOMEGUY_HTTP_BLOCK_PROVIDER_ENDPOINTS`
 
-Comma-separated list of [HTTP trustless gateway](https://specs.ipfs.tech/http-gateways/trustless-gateway/) for probing and generating synthetic provider records.
+Comma-separated list of [HTTP trustless gateways](https://specs.ipfs.tech/http-gateways/trustless-gateway/) that Someguy probes to synthesize provider records.
 
-When the configured gateway responds with HTTP 200 to an HTTP HEAD request for a block (`HEAD /ipfs/{cid}?format=raw`), `FindProviders` returns a provider record containing a PeerID from `SOMEGUY_HTTP_BLOCK_PROVIDER_PEERIDS` and the HTTP gateway endpoint as a multiaddr with `/tls/http` suffix.
+When a configured gateway responds with HTTP 200 to a `HEAD /ipfs/{cid}?format=raw` request, `FindProviders` returns a provider record that contains the matching PeerID from `SOMEGUY_HTTP_BLOCK_PROVIDER_PEERIDS` and the gateway endpoint as a multiaddr with the `/tls/http` suffix.
 
 > [!IMPORTANT]
 > When creating a synthetic `/routing/v1` for your gateway, and not a general-purpose routing endpoint, set `SOMEGUY_DHT=disabled` and `SOMEGUY_PROVIDER_ENDPOINTS=""` to disable default DHT and HTTP routers and exclusively use the explicitly defined `SOMEGUY_HTTP_BLOCK_PROVIDER_ENDPOINTS`.
@@ -124,17 +124,15 @@ Default: none
 
 ### `SOMEGUY_HTTP_BLOCK_PROVIDER_PEERIDS`
 
-Comma-separated list of [multibase-encoded peerIDs](https://github.com/libp2p/specs/blob/master/peer-ids/peer-ids.md#string-representation) to use in synthetic provider records returned for HTTP providers in `SOMEGUY_HTTP_BLOCK_PROVIDER_ENDPOINTS`. The order of PeerIDs must match the order of endpoints.
+Comma-separated list of [multibase-encoded peerIDs](https://github.com/libp2p/specs/blob/master/peer-ids/peer-ids.md#string-representation) that Someguy embeds in synthetic provider records for the HTTP endpoints in `SOMEGUY_HTTP_BLOCK_PROVIDER_ENDPOINTS`. The order of PeerIDs must match the order of endpoints.
 
-If no peerIDs are passed but provider endpoints are configured, synthetic PeerIDs will be automatically generated. These are deterministic identifiers derived from SHA256 hashes of the endpoint URLs, used solely for routing system compatibility. Since these providers use HTTP trustless gateway protocol rather than libp2p, the PeerIDs are purely synthetic and never participate in any cryptographic operations or peer authentication.
+If you configure provider endpoints without PeerIDs, Someguy generates synthetic PeerIDs automatically, deterministically derived from SHA-256 hashes of the endpoint URLs. These PeerIDs exist only for routing-system compatibility; HTTP trustless gateways never use them for cryptographic operations or peer authentication.
 
 Default: none
 
 ### `SOMEGUY_LIBP2P_LISTEN_ADDRS`
 
-Multiaddresses for libp2p host to listen on (comma-separated).
-
-Default: `someguy start --help`
+Comma-separated libp2p listen multiaddresses. Someguy binds port `4004` on IPv4 and IPv6 across libp2p's default transports. To see the exact defaults built into this release, run `someguy start --help`.
 
 ### `SOMEGUY_LIBP2P_CONNMGR_LOW`
 
@@ -170,8 +168,7 @@ Default: 0 (50% of the process' limit)
 
 ### `GOLOG_LOG_LEVEL`
 
-Specifies the log-level, both globally and on a per-subsystem basis. Level can
-be one of:
+Sets the log level globally or per subsystem. Levels:
 
 * `debug`
 * `info`
@@ -181,9 +178,7 @@ be one of:
 * `panic`
 * `fatal`
 
-Per-subsystem levels can be specified with `subsystem=level`.  One global level
-and one or more per-subsystem levels can be specified by separating them with
-commas.
+Specify per-subsystem levels as `subsystem=level`. Combine a global level with any number of per-subsystem levels by separating them with commas.
 
 Default: `error`
 
@@ -195,11 +190,11 @@ GOLOG_LOG_LEVEL="error,someguy=debug" someguy
 
 ### `GOLOG_LOG_FMT`
 
-Specifies the log message format.  It supports the following values:
+Sets the log message format. Supported values:
 
-- `color` -- human readable, colorized (ANSI) output
-- `nocolor` -- human readable, plain-text output.
-- `json` -- structured JSON.
+- `color`: human-readable, colorized (ANSI) output
+- `nocolor`: human-readable, plain-text output
+- `json`: structured JSON
 
 For example, to log structured JSON (for easier parsing):
 
@@ -211,13 +206,13 @@ The logging format defaults to `color` when the output is a terminal, and
 
 ### `GOLOG_FILE`
 
-Sets the file to which the logs are saved. By default, they are printed to the standard error output.
+Writes logs to the given file. Defaults to stderr.
 
 ### `GOLOG_TRACING_FILE`
 
-Sets the file to which the tracing events are sent. By default, tracing is disabled.
+Writes tracing events to the given file. Tracing is disabled by default.
 
-Warning: Enabling tracing will likely affect performance.
+Warning: tracing affects performance.
 
 ## Tracing
 
@@ -225,15 +220,12 @@ See [tracing.md](tracing.md).
 
 ### `SOMEGUY_TRACING_AUTH`
 
-Optional, setting to non-empty value enables on-demand tracing per-request.
+Setting a non-empty value enables on-demand per-request tracing.
 
-The ability to pass `Traceparent` or `Tracestate` headers is guarded by an
-`Authorization` header. The value of the `Authorization` header should match
-the value in the `SOMEGUY_TRACING_AUTH` environment variable.
+To honor a `Traceparent` or `Tracestate` header, Someguy requires the request to carry an `Authorization` header whose value matches `SOMEGUY_TRACING_AUTH`.
 
 ### `SOMEGUY_SAMPLING_FRACTION`
 
-Optional, set to 0 by default.
+Fraction of routing requests to sample (0 to 1). Applied independently of `Traceparent`-based sampling.
 
-The fraction (between 0 and 1) of requests that should be sampled.
-This is calculated independently of any Traceparent based sampling.
+Default: `0`

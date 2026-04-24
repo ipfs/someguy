@@ -17,17 +17,29 @@ The following emojis are used to highlight certain changes:
 
 ### Changed
 
-- [boxo v0.39.0](https://github.com/ipfs/boxo/releases/tag/v0.39.0)
-- [go-libp2p v0.48.0](https://github.com/libp2p/go-libp2p/releases/tag/v0.48.0)
-- [go-libp2p-kad-dht v0.39.1](https://github.com/libp2p/go-libp2p-kad-dht/releases/tag/v0.39.1)
-- bumped Docker workflow actions (`setup-qemu-action`, `setup-buildx-action`, `login-action`, `build-push-action`) to latest majors
-- Docker image builder bumped to `golang:1.26-bookworm`
-
 ### Removed
 
 ### Fixed
 
 ### Security
+
+## [v0.12.0] - 2026-04-24
+
+### Changed
+
+- [boxo v0.39.0](https://github.com/ipfs/boxo/releases/tag/v0.39.0)
+- [go-libp2p v0.48.0](https://github.com/libp2p/go-libp2p/releases/tag/v0.48.0)
+- [go-libp2p-kad-dht v0.39.1](https://github.com/libp2p/go-libp2p-kad-dht/releases/tag/v0.39.1)
+- bumped Docker workflow actions (`setup-qemu-action`, `setup-buildx-action`, `login-action`, `build-push-action`) to latest majors
+- Docker image builder bumped to `golang:1.26-bookworm`
+- clearer `--help` descriptions for `someguy`, `someguy start`, and `someguy ask` (including per-subcommand short descriptions and correct `USAGE` lines)
+- README, `docs/environment-variables.md`, `docs/metrics.md`, and `docs/tracing.md` rewritten for clarity (active voice, removed duplicated wording)
+
+### Fixed
+
+- `docs/environment-variables.md`: replaced the self-referential default for `SOMEGUY_LIBP2P_LISTEN_ADDRS` with a pointer to `someguy start --help` so the docs cannot drift from the CLI default
+- `docs/metrics.md`: fixed "Prometheus Glient" typo, corrected plural/subject-verb agreement, and documented the previously-undocumented `someguy_cached_addr_book_probed_peers` counter
+- `docs/tracing.md`: corrected the example port (`8090` → `8190`, matching `SOMEGUY_LISTEN_ADDRESS` default), replaced broken `headers.md` links with inline descriptions, and clarified that tracing covers inbound HTTP routing requests (not "gateway" requests)
 
 ## [v0.11.1]
 

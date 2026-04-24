@@ -10,7 +10,7 @@
 
 Someguy is an [HTTP Delegated Routing V1](https://specs.ipfs.tech/routing/http-routing-v1/) server that proxies requests to the [Amino DHT](https://docs.ipfs.tech/concepts/glossary/#amino) and other Delegated Routing servers such as the [Network Indexer](https://cid.contact).
 
-Someguy is also hosted as a [public utility](https://docs.ipfs.tech/concepts/public-utilities/#delegated-routing-endpoint) at `https://delegated-ipfs.dev/routing/v1`.
+[Shipyard](https://ipshipyard.com/) also runs a [public Someguy instance](https://docs.ipfs.tech/concepts/public-utilities/#delegated-routing-endpoint) at `https://delegated-ipfs.dev/routing/v1`.
 
 ## Build
 
@@ -39,7 +39,7 @@ Automated Docker container releases are available from the [Github container reg
   - `staging-YYYY-DD-MM-GITSHA` points at a specific commit from the `staging` branch
   - This tag is used by developers for internal testing, not intended for end users
 
-When using Docker, make sure to pass necessary config via `-e`:
+When using Docker, pass configuration via `-e`:
 ```console
 $ docker pull ghcr.io/ipfs/someguy:main-latest
 $ docker run --rm -it --net=host ghcr.io/ipfs/someguy:main-latest
@@ -49,23 +49,23 @@ See [`/docs/environment-variables.md`](./docs/environment-variables.md).
 
 ## Usage
 
-You can use `someguy` as a client, or as a server.
+Run `someguy` as a client or as a server.
 
 ### Server
 
-You can start the server with `someguy start`. This will, by default, run a Delegated Routing V1 server that proxies requests to the [IPFS Amino DHT](https://blog.ipfs.tech/2023-09-amino-refactoring/) and the [cid.contact](https://cid.contact) indexer (IPNI) node.
+Start the server with `someguy start`. By default it proxies requests to the [IPFS Amino DHT](https://blog.ipfs.tech/2023-09-amino-refactoring/) and the [cid.contact](https://cid.contact) indexer (IPNI) node.
 
-For more details run `someguy start --help`.
+For more details, run `someguy start --help`.
 
 ### Client
 
-If you don't want to run a server yourself, but want to query some other server, you can run `someguy ask` and choose any of the subcommands and ask for a provider, a peer, or even an IPNS record.
+To query an existing server without running one yourself, use `someguy ask <subcommand>` to look up a provider, peer, or IPNS record.
 
-For more details run `someguy ask --help`.
+For more details, run `someguy ask --help`.
 
 ### AutoConf
 
-Automatic configuration of bootstrap peers and delegated routing endpoints. When enabled (default), the `auto` placeholder is replaced with network-recommended values fetched from a remote URL.
+Automatic configuration of bootstrap peers and delegated routing endpoints. When enabled (default), Someguy replaces the `auto` placeholder with network-recommended values fetched from a remote URL.
 
 Configuration:
 - `--autoconf` / [`SOMEGUY_AUTOCONF`](docs/environment-variables.md#someguy_autoconf)
@@ -86,15 +86,15 @@ See [environment-variables.md](docs/environment-variables.md) for URL formats an
 
 ## Deployment
 
-Suggested method for self-hosting is to run a [prebuilt Docker image](#docker).
+For self-hosting, run the [prebuilt Docker image](#docker).
 
 ## Release
 
 1. Create a PR from branch `release-vX.Y.Z` against `main` that:
-   1. Tidies the [`CHANGELOG.md`](CHANGELOG.md) with the changes for the current release
-   2. Updates the  [`version.json`](./version.json) file
+   1. Updates [`CHANGELOG.md`](CHANGELOG.md) with entries for the current release
+   2. Updates the [`version.json`](./version.json) file
 2. Once the release checker creates a draft release, copy-paste the changelog into the draft
-3. Merge the PR, the release will be automatically created once the PR is merged
+3. Merge the PR; the release workflow tags and publishes automatically
 
 ## License
 
