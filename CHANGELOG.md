@@ -17,6 +17,12 @@ The following emojis are used to highlight certain changes:
 
 ### Changed
 
+- [boxo v0.39.0](https://github.com/ipfs/boxo/releases/tag/v0.39.0)
+- [go-libp2p v0.48.0](https://github.com/libp2p/go-libp2p/releases/tag/v0.48.0)
+- [go-libp2p-kad-dht v0.39.1](https://github.com/libp2p/go-libp2p-kad-dht/releases/tag/v0.39.1)
+- bumped Docker workflow actions (`setup-qemu-action`, `setup-buildx-action`, `login-action`, `build-push-action`) to latest majors
+- Docker image builder bumped to `golang:1.26-bookworm`
+
 ### Removed
 
 ### Fixed
