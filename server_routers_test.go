@@ -316,7 +316,7 @@ func TestFindProviders(t *testing.T) {
 		mr2Iter := newMockIter[types.Record](ctx)
 		mr2.On("FindProviders", mock.Anything, c, 10).Return(mr2Iter, nil)
 
-		d = sanitizeRouter{parallelRouter{
+		d = sanitizeRouter{router: parallelRouter{
 			routers: []router{
 				&composableRouter{
 					providers: mr1,

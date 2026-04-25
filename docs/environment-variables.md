@@ -8,6 +8,7 @@ The environment variables below override `someguy`'s built-in defaults.
   - [`SOMEGUY_CACHED_ADDR_BOOK`](#someguy_cached_addr_book)
   - [`SOMEGUY_CACHED_ADDR_BOOK_RECENT_TTL`](#someguy_cached_addr_book_recent_ttl)
   - [`SOMEGUY_CACHED_ADDR_BOOK_ACTIVE_PROBING`](#someguy_cached_addr_book_active_probing)
+  - [`SOMEGUY_CACHED_ADDR_BOOK_STALE_PROBING`](#someguy_cached_addr_book_stale_probing)
   - [`SOMEGUY_PROVIDER_ENDPOINTS`](#someguy_provider_endpoints)
   - [`SOMEGUY_PEER_ENDPOINTS`](#someguy_peer_endpoints)
   - [`SOMEGUY_IPNS_ENDPOINTS`](#someguy_ipns_endpoints)
@@ -60,6 +61,16 @@ Default: `48h`
 ### `SOMEGUY_CACHED_ADDR_BOOK_ACTIVE_PROBING`
 
 Enables active probing of cached peers to keep their multiaddrs up to date. Applies only when `SOMEGUY_CACHED_ADDR_BOOK` is enabled.
+
+Default: `true`
+
+### `SOMEGUY_CACHED_ADDR_BOOK_STALE_PROBING`
+
+Some faulty third-party DHT peers never expire old observed addresses for other peers. This causes peers with dynamic ports (e.g. UPnP on consumer routers) or changing IPs (roaming, ISP changes) to accumulate dead addresses over time, making them effectively unreachable.
+
+When enabled, someguy detects first-encounter peers whose address sets look suspicious (multiple ports per IP, or more than 3 IPs per address family) and probes each unique address with an ephemeral libp2p handshake to filter out dead ones before returning results.
+
+Only applies if `SOMEGUY_CACHED_ADDR_BOOK` is enabled.
 
 Default: `true`
 

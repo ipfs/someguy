@@ -53,6 +53,12 @@ func main() {
 						EnvVars: []string{"SOMEGUY_CACHED_ADDR_BOOK_ACTIVE_PROBING"},
 						Usage:   "actively probe peers in cache to keep their multiaddrs up to date",
 					},
+					&cli.BoolFlag{
+						Name:    "cached-addr-book-stale-probing",
+						Value:   true,
+						EnvVars: []string{"SOMEGUY_CACHED_ADDR_BOOK_STALE_PROBING"},
+						Usage:   "detect and probe stale addresses caused by faulty third-party DHT peers that never expire old observed addrs (e.g. dead UPnP ports, changed IPs)",
+					},
 					&cli.DurationFlag{
 						Name:        "cached-addr-book-recent-ttl",
 						DefaultText: DefaultRecentlyConnectedAddrTTL.String(),
@@ -184,6 +190,7 @@ func main() {
 						dhtType:                     ctx.String("dht"),
 						cachedAddrBook:              ctx.Bool("cached-addr-book"),
 						cachedAddrBookActiveProbing: ctx.Bool("cached-addr-book-active-probing"),
+						cachedAddrBookStaleProbing:  ctx.Bool("cached-addr-book-stale-probing"),
 						cachedAddrBookRecentTTL:     ctx.Duration("cached-addr-book-recent-ttl"),
 
 						contentEndpoints:       ctx.StringSlice("provider-endpoints"),
