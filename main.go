@@ -60,6 +60,18 @@ func main() {
 						EnvVars:     []string{"SOMEGUY_CACHED_ADDR_BOOK_RECENT_TTL"},
 						Usage:       "TTL for recently connected peers' multiaddrs in the cached address book",
 					},
+					&cli.IntFlag{
+						Name:    "records-limit",
+						Value:   DefaultRecordsLimit,
+						EnvVars: []string{"SOMEGUY_RECORDS_LIMIT"},
+						Usage:   "maximum providers or peers per `Accept: application/json` request (HTTP Routing v1 section 4.1.5 recommends 100; 0 disables the cap)",
+					},
+					&cli.IntFlag{
+						Name:    "streaming-records-limit",
+						Value:   DefaultStreamingRecordsLimit,
+						EnvVars: []string{"SOMEGUY_STREAMING_RECORDS_LIMIT"},
+						Usage:   "maximum providers or peers per `Accept: application/x-ndjson` request (0 disables the cap)",
+					},
 					&cli.StringSliceFlag{
 						Name:    "provider-endpoints",
 						Value:   cli.NewStringSlice(autoconf.AutoPlaceholder),
@@ -179,12 +191,22 @@ func main() {
 					},
 				},
 				Action: func(ctx *cli.Context) error {
+					recordsLimit := ctx.Int("records-limit")
+					if recordsLimit < 0 {
+						return fmt.Errorf("records-limit must be non-negative, got %d (0 means unbounded)", recordsLimit)
+					}
+					streamingRecordsLimit := ctx.Int("streaming-records-limit")
+					if streamingRecordsLimit < 0 {
+						return fmt.Errorf("streaming-records-limit must be non-negative, got %d (0 means unbounded)", streamingRecordsLimit)
+					}
 					cfg := &config{
 						listenAddress:               ctx.String("listen-address"),
 						dhtType:                     ctx.String("dht"),
 						cachedAddrBook:              ctx.Bool("cached-addr-book"),
 						cachedAddrBookActiveProbing: ctx.Bool("cached-addr-book-active-probing"),
 						cachedAddrBookRecentTTL:     ctx.Duration("cached-addr-book-recent-ttl"),
+						recordsLimit:                recordsLimit,
+						streamingRecordsLimit:       streamingRecordsLimit,
 
 						contentEndpoints:       ctx.StringSlice("provider-endpoints"),
 						peerEndpoints:          ctx.StringSlice("peer-endpoints"),

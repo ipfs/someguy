@@ -46,6 +46,19 @@ const (
 	addrQueryOriginUnknown      = "unknown"
 
 	DispatchedFindPeersTimeout = time.Minute
+
+	// cacheFallbackOverfetchMultiplier sizes the over-fetch from the
+	// underlying router so that, after [cacheFallbackIter] drops records
+	// without multiaddrs, enough survive to meet the caller's limit.
+	// Empirically derived: at delegated-ipfs.dev, a JSON limit of 20
+	// produced about 4 surfaced results, so roughly 1 in 3 records
+	// reaches the client.
+	cacheFallbackOverfetchMultiplier = 3
+	// cacheFallbackOverfetchMax caps the over-fetched limit so a large
+	// caller-side limit cannot blow up the DHT walk. Sized at 3x
+	// DefaultStreamingRecordsLimit so the multiplier applies on the
+	// streaming path too. The routing timeout bounds wall-clock.
+	cacheFallbackOverfetchMax = 3000
 )
 
 // cachedRouter wraps a router with the cachedAddrBook to retrieve cached addresses for peers without multiaddrs in FindProviders
@@ -60,13 +73,32 @@ func NewCachedRouter(router router, cab *cachedAddrBook) cachedRouter {
 }
 
 func (r cachedRouter) FindProviders(ctx context.Context, key cid.Cid, limit int) (iter.ResultIter[types.Record], error) {
-	it, err := r.router.FindProviders(ctx, key, limit)
+	// Over-fetch from the underlying router: cacheFallbackIter drops
+	// records whose Addrs are empty and uncached. Without over-fetching,
+	// the source iterator's hard ceiling pre-filters records and the
+	// post-filter count falls short of `limit`.
+	overfetch := overfetchLimit(limit)
+	it, err := r.router.FindProviders(ctx, key, overfetch)
 	if err != nil {
 		return nil, err
 	}
 
-	iter := NewCacheFallbackIter(it, r, ctx, addrQueryOriginProviders)
-	return iter, nil
+	fallback := NewCacheFallbackIter(it, r, ctx, addrQueryOriginProviders)
+	if limit <= 0 {
+		return fallback, nil
+	}
+	return newLimitedIter(fallback, limit), nil
+}
+
+// overfetchLimit returns the count to pass to the underlying router so
+// that, after cacheFallbackIter drops records without addresses, up to
+// `limit` results reach the caller. A non-positive `limit` means
+// unbounded and returns 0, matching the boxo convention.
+func overfetchLimit(limit int) int {
+	if limit <= 0 {
+		return 0
+	}
+	return min(limit*cacheFallbackOverfetchMultiplier, cacheFallbackOverfetchMax)
 }
 
 // FindPeers uses a simpler approach than FindProviders because we're dealing with a single PeerRecord, and there's
@@ -303,4 +335,38 @@ func (it *cacheFallbackIter) dispatchFindPeer(record types.PeerRecord) {
 	} else {
 		sendResult(record) // pass back the record with no addrs
 	}
+}
+
+// limitedIter caps an [iter.ResultIter] at the first `limit` successful
+// (non-error) values. Errors pass through and do not count toward the
+// limit. Close cascades to the wrapped iterator.
+type limitedIter[T any] struct {
+	inner iter.ResultIter[T]
+	limit int
+	count int
+}
+
+func newLimitedIter[T any](inner iter.ResultIter[T], limit int) *limitedIter[T] {
+	return &limitedIter[T]{inner: inner, limit: limit}
+}
+
+func (l *limitedIter[T]) Next() bool {
+	if l.count >= l.limit {
+		return false
+	}
+	if !l.inner.Next() {
+		return false
+	}
+	if l.inner.Val().Err == nil {
+		l.count++
+	}
+	return true
+}
+
+func (l *limitedIter[T]) Val() iter.Result[T] {
+	return l.inner.Val()
+}
+
+func (l *limitedIter[T]) Close() error {
+	return l.inner.Close()
 }

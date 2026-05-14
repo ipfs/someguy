@@ -8,6 +8,8 @@ The environment variables below override `someguy`'s built-in defaults.
   - [`SOMEGUY_CACHED_ADDR_BOOK`](#someguy_cached_addr_book)
   - [`SOMEGUY_CACHED_ADDR_BOOK_RECENT_TTL`](#someguy_cached_addr_book_recent_ttl)
   - [`SOMEGUY_CACHED_ADDR_BOOK_ACTIVE_PROBING`](#someguy_cached_addr_book_active_probing)
+  - [`SOMEGUY_RECORDS_LIMIT`](#someguy_records_limit)
+  - [`SOMEGUY_STREAMING_RECORDS_LIMIT`](#someguy_streaming_records_limit)
   - [`SOMEGUY_PROVIDER_ENDPOINTS`](#someguy_provider_endpoints)
   - [`SOMEGUY_PEER_ENDPOINTS`](#someguy_peer_endpoints)
   - [`SOMEGUY_IPNS_ENDPOINTS`](#someguy_ipns_endpoints)
@@ -62,6 +64,18 @@ Default: `48h`
 Enables active probing of cached peers to keep their multiaddrs up to date. Applies only when `SOMEGUY_CACHED_ADDR_BOOK` is enabled.
 
 Default: `true`
+
+### `SOMEGUY_RECORDS_LIMIT`
+
+Maximum providers or peers returned per `Accept: application/json` request. [HTTP Routing v1 §4.1.5](https://specs.ipfs.tech/routing/http-routing-v1/) recommends `100`. Set to `0` to disable the cap.
+
+Default: `100`
+
+### `SOMEGUY_STREAMING_RECORDS_LIMIT`
+
+Maximum providers or peers returned per `Accept: application/x-ndjson` request. Sits above `SOMEGUY_RECORDS_LIMIT` so streaming returns more results, while bounding per-connection cost (DHT walk, addr-book probing, deduplication). Set to `0` to disable the cap.
+
+Default: `1000`
 
 ### `SOMEGUY_PROVIDER_ENDPOINTS`
 

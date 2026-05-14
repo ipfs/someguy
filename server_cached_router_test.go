@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -62,7 +64,8 @@ func TestCachedRouter(t *testing.T) {
 		mockIter := newMockResultIter([]iter.Result[types.Record]{
 			{Val: &types.PeerRecord{Schema: "peer", ID: &pid, Addrs: nil}},
 		})
-		mr.On("FindProviders", mock.Anything, c, 10).Return(mockIter, nil)
+		// cachedRouter over-fetches by cacheFallbackOverfetchMultiplier to absorb addr-less drops.
+		mr.On("FindProviders", mock.Anything, c, overfetchLimit(10)).Return(mockIter, nil)
 
 		// Create cached address book with test addresses
 		cab, err := newCachedAddrBook()
@@ -488,4 +491,164 @@ func TestCacheFallbackIter(t *testing.T) {
 		}
 	})
 
+}
+
+func TestOverfetchLimit(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		limit int
+		want  int
+	}{
+		{"zero (unbounded) stays zero", 0, 0},
+		{"negative treated as unbounded", -1, 0},
+		{"small limit multiplied", 1, cacheFallbackOverfetchMultiplier},
+		{"spec-default of 100 -> 300", 100, 300},
+		{"limit beyond cap is clamped", 10000, cacheFallbackOverfetchMax},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, overfetchLimit(tc.limit))
+		})
+	}
+}
+
+func TestLimitedIter_StopsAtLimit(t *testing.T) {
+	t.Parallel()
+
+	pid := peer.ID("p")
+	inner := newMockResultIter([]iter.Result[types.Record]{
+		{Val: &types.PeerRecord{Schema: "peer", ID: &pid}},
+		{Val: &types.PeerRecord{Schema: "peer", ID: &pid}},
+		{Val: &types.PeerRecord{Schema: "peer", ID: &pid}},
+		{Val: &types.PeerRecord{Schema: "peer", ID: &pid}},
+		{Val: &types.PeerRecord{Schema: "peer", ID: &pid}},
+	})
+
+	limited := newLimitedIter(inner, 2)
+	results, err := iter.ReadAllResults(limited)
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+	require.NoError(t, limited.Close())
+}
+
+func TestLimitedIter_ErrorsDoNotCountTowardLimit(t *testing.T) {
+	t.Parallel()
+
+	pid := peer.ID("p")
+	inner := newMockResultIter([]iter.Result[types.Record]{
+		{Err: errors.New("transient error")},
+		{Val: &types.PeerRecord{Schema: "peer", ID: &pid}},
+		{Err: errors.New("another transient error")},
+		{Val: &types.PeerRecord{Schema: "peer", ID: &pid}},
+		{Val: &types.PeerRecord{Schema: "peer", ID: &pid}},
+	})
+
+	limited := newLimitedIter(inner, 2)
+	var values, errs int
+	for limited.Next() {
+		if limited.Val().Err != nil {
+			errs++
+		} else {
+			values++
+		}
+	}
+	require.Equal(t, 2, values, "limit should stop at 2 successful values")
+	require.Equal(t, 2, errs, "error results before the cap should still be observed")
+}
+
+func TestCachedRouter_FindProviders_OverFetchesToAbsorbDrops(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	c := makeCID()
+	publicAddr := mustMultiaddr(t, "/ip4/137.21.14.12/tcp/4001")
+
+	// 12 records: 4 with addresses, 8 without (uncached, so
+	// cacheFallbackIter drops them). The caller asks for limit=4; the
+	// over-fetch requests 4*multiplier=12, and the wrapper surfaces 4.
+	records := make([]iter.Result[types.Record], 0, 12)
+	for i := range 4 {
+		pid := peer.ID(fmt.Sprintf("with-addrs-%d", i))
+		records = append(records, iter.Result[types.Record]{
+			Val: &types.PeerRecord{Schema: "peer", ID: &pid, Addrs: []types.Multiaddr{publicAddr}},
+		})
+	}
+	for i := range 8 {
+		pid := peer.ID(fmt.Sprintf("no-addrs-%d", i))
+		records = append(records, iter.Result[types.Record]{
+			Val: &types.PeerRecord{Schema: "peer", ID: &pid, Addrs: nil},
+		})
+	}
+
+	mr := &mockRouter{}
+	mr.On("FindProviders", mock.Anything, c, overfetchLimit(4)).Return(newMockResultIter(records), nil)
+	// cacheFallbackIter dispatches background FindPeers for addr-less
+	// records. Stub it as "no addrs found" so it does not surface them.
+	mr.On("FindPeers", mock.Anything, mock.Anything, 1).Maybe().Return(
+		newMockResultIter([]iter.Result[*types.PeerRecord]{}), nil,
+	)
+
+	cab, err := newCachedAddrBook()
+	require.NoError(t, err)
+	cr := NewCachedRouter(mr, cab)
+
+	it, err := cr.FindProviders(ctx, c, 4)
+	require.NoError(t, err)
+
+	results, err := iter.ReadAllResults(it)
+	require.NoError(t, err)
+	require.Len(t, results, 4, "over-fetch should keep producing until limit reached or source exhausted")
+	mr.AssertExpectations(t)
+}
+
+func TestCachedRouter_FindProviders_OverFetchCapApplies(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	c := makeCID()
+
+	// Pick a caller limit large enough that limit*multiplier exceeds the
+	// cap, so the assertion proves clamping rather than the boundary case.
+	const callerLimit = cacheFallbackOverfetchMax
+	require.Greater(t, callerLimit*cacheFallbackOverfetchMultiplier, cacheFallbackOverfetchMax,
+		"test precondition: limit*multiplier must exceed the cap")
+
+	mr := &mockRouter{}
+	mr.On("FindProviders", mock.Anything, c, cacheFallbackOverfetchMax).Return(
+		newMockResultIter([]iter.Result[types.Record]{}), nil,
+	)
+	cab, err := newCachedAddrBook()
+	require.NoError(t, err)
+	cr := NewCachedRouter(mr, cab)
+
+	it, err := cr.FindProviders(ctx, c, callerLimit)
+	require.NoError(t, err)
+	_, err = iter.ReadAllResults(it)
+	require.NoError(t, err)
+	mr.AssertExpectations(t)
+}
+
+func TestCachedRouter_FindProviders_UnboundedLimitPassesZero(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	c := makeCID()
+
+	mr := &mockRouter{}
+	// limit == 0 means unbounded; cachedRouter must pass 0 through, not multiply it.
+	mr.On("FindProviders", mock.Anything, c, 0).Return(
+		newMockResultIter([]iter.Result[types.Record]{}), nil,
+	)
+	cab, err := newCachedAddrBook()
+	require.NoError(t, err)
+	cr := NewCachedRouter(mr, cab)
+
+	it, err := cr.FindProviders(ctx, c, 0)
+	require.NoError(t, err)
+	_, err = iter.ReadAllResults(it)
+	require.NoError(t, err)
+	mr.AssertExpectations(t)
 }
