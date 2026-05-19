@@ -505,7 +505,7 @@ func TestOverfetchLimit(t *testing.T) {
 		{"negative treated as unbounded", -1, 0},
 		{"small limit multiplied", 1, cacheFallbackOverfetchMultiplier},
 		{"spec-default of 100 -> 300", 100, 300},
-		{"limit beyond cap is clamped", 10000, cacheFallbackOverfetchMax},
+		{"large limit is multiplied, not clamped", 10000, 10000 * cacheFallbackOverfetchMultiplier},
 	}
 
 	for _, tc := range tests {
@@ -604,20 +604,18 @@ func TestCachedRouter_FindProviders_OverFetchesToAbsorbDrops(t *testing.T) {
 	mr.AssertExpectations(t)
 }
 
-func TestCachedRouter_FindProviders_OverFetchCapApplies(t *testing.T) {
+func TestCachedRouter_FindProviders_LargeLimitIsMultipliedNotClamped(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 	c := makeCID()
 
-	// Pick a caller limit large enough that limit*multiplier exceeds the
-	// cap, so the assertion proves clamping rather than the boundary case.
-	const callerLimit = cacheFallbackOverfetchMax
-	require.Greater(t, callerLimit*cacheFallbackOverfetchMultiplier, cacheFallbackOverfetchMax,
-		"test precondition: limit*multiplier must exceed the cap")
-
+	// An operator-chosen positive limit must reach the underlying
+	// router multiplied, with no hidden ceiling. Passing 0 (unbounded)
+	// is the only way to opt out of over-fetching.
+	const callerLimit = 10000
 	mr := &mockRouter{}
-	mr.On("FindProviders", mock.Anything, c, cacheFallbackOverfetchMax).Return(
+	mr.On("FindProviders", mock.Anything, c, callerLimit*cacheFallbackOverfetchMultiplier).Return(
 		newMockResultIter([]iter.Result[types.Record]{}), nil,
 	)
 	cab, err := newCachedAddrBook()

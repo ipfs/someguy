@@ -47,18 +47,11 @@ const (
 
 	DispatchedFindPeersTimeout = time.Minute
 
-	// cacheFallbackOverfetchMultiplier sizes the over-fetch from the
-	// underlying router so that, after [cacheFallbackIter] drops records
-	// without multiaddrs, enough survive to meet the caller's limit.
-	// Empirically derived: at delegated-ipfs.dev, a JSON limit of 20
-	// produced about 4 surfaced results, so roughly 1 in 3 records
-	// reaches the client.
+	// cacheFallbackOverfetchMultiplier inflates the limit we pass to
+	// the underlying router. [cacheFallbackIter] drops records without
+	// multiaddrs, so asking for more than the caller wants keeps the
+	// surviving count close to the limit. Tune as survival changes.
 	cacheFallbackOverfetchMultiplier = 3
-	// cacheFallbackOverfetchMax caps the over-fetched limit so a large
-	// caller-side limit cannot blow up the DHT walk. Sized at 3x
-	// DefaultStreamingRecordsLimit so the multiplier applies on the
-	// streaming path too. The routing timeout bounds wall-clock.
-	cacheFallbackOverfetchMax = 3000
 )
 
 // cachedRouter wraps a router with the cachedAddrBook to retrieve cached addresses for peers without multiaddrs in FindProviders
@@ -73,10 +66,9 @@ func NewCachedRouter(router router, cab *cachedAddrBook) cachedRouter {
 }
 
 func (r cachedRouter) FindProviders(ctx context.Context, key cid.Cid, limit int) (iter.ResultIter[types.Record], error) {
-	// Over-fetch from the underlying router: cacheFallbackIter drops
-	// records whose Addrs are empty and uncached. Without over-fetching,
-	// the source iterator's hard ceiling pre-filters records and the
-	// post-filter count falls short of `limit`.
+	// Over-fetch from the underlying router because cacheFallbackIter
+	// drops records with empty, uncached addrs. Asking for exactly
+	// `limit` returns fewer surfaced results than the caller wanted.
 	overfetch := overfetchLimit(limit)
 	it, err := r.router.FindProviders(ctx, key, overfetch)
 	if err != nil {
@@ -91,14 +83,16 @@ func (r cachedRouter) FindProviders(ctx context.Context, key cid.Cid, limit int)
 }
 
 // overfetchLimit returns the count to pass to the underlying router so
-// that, after cacheFallbackIter drops records without addresses, up to
-// `limit` results reach the caller. A non-positive `limit` means
-// unbounded and returns 0, matching the boxo convention.
+// that, after cacheFallbackIter drops addr-less records, up to `limit`
+// results reach the caller. A non-positive `limit` means unbounded and
+// returns 0, matching the boxo convention. The operator picks the
+// user-facing limit, so no hard ceiling is applied here; routingTimeout
+// bounds wall-clock cost.
 func overfetchLimit(limit int) int {
 	if limit <= 0 {
 		return 0
 	}
-	return min(limit*cacheFallbackOverfetchMultiplier, cacheFallbackOverfetchMax)
+	return limit * cacheFallbackOverfetchMultiplier
 }
 
 // FindPeers uses a simpler approach than FindProviders because we're dealing with a single PeerRecord, and there's
