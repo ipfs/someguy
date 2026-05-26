@@ -15,6 +15,18 @@ The following emojis are used to highlight certain changes:
 
 ### Added
 
+### Changed
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [v0.13.0] - 2026-05-26
+
+### Added
+
 - `--records-limit` / `SOMEGUY_RECORDS_LIMIT` (default `100`) caps results for `Accept: application/json`, matching the SHOULD-cap in [HTTP Routing v1 §4.1.5](https://specs.ipfs.tech/routing/http-routing-v1/). Set to `0` to disable the cap. [#150](https://github.com/ipfs/someguy/pull/150)
 - `--streaming-records-limit` / `SOMEGUY_STREAMING_RECORDS_LIMIT` (default `1000`) caps results for `Accept: application/x-ndjson`. Set to `0` to disable the cap. [#150](https://github.com/ipfs/someguy/pull/150)
 
@@ -25,13 +37,9 @@ The following emojis are used to highlight certain changes:
 - [go-libp2p-kad-dht v0.40.0](https://github.com/libp2p/go-libp2p-kad-dht/releases/tag/v0.40.0)
 - [go-log/v2 v2.9.2](https://github.com/ipfs/go-log/releases/tag/v2.9.2)
 
-### Removed
-
 ### Fixed
 
 - JSON delegated routing requests now surface close to the requested number of providers. The boxo server enforces the records limit after filtering, so records without addresses no longer shrink the response below `--records-limit`. [#150](https://github.com/ipfs/someguy/pull/150)
-
-### Security
 
 ## [v0.12.0] - 2026-04-24
 
