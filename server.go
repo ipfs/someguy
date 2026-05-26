@@ -74,12 +74,25 @@ func withRequestLogger(next http.Handler) http.Handler {
 	})
 }
 
+const (
+	// DefaultRecordsLimit caps results for `Accept: application/json`
+	// requests. Matches the SHOULD-cap from HTTP Routing v1 section 4.1.5.
+	DefaultRecordsLimit = 100
+	// DefaultStreamingRecordsLimit caps results for `Accept:
+	// application/x-ndjson` requests. Sits above the JSON cap so streaming
+	// returns "more results" per HTTP Routing v1 section 4.1.5. Set
+	// SOMEGUY_STREAMING_RECORDS_LIMIT=0 to disable the cap.
+	DefaultStreamingRecordsLimit = 1000
+)
+
 type config struct {
 	listenAddress               string
 	dhtType                     string
 	cachedAddrBook              bool
 	cachedAddrBookActiveProbing bool
 	cachedAddrBookRecentTTL     time.Duration
+	recordsLimit                int
+	streamingRecordsLimit       int
 
 	contentEndpoints       []string
 	peerEndpoints          []string
@@ -223,6 +236,8 @@ func start(ctx context.Context, cfg *config) error {
 
 	handlerOpts := []server.Option{
 		server.WithPrometheusRegistry(prometheus.DefaultRegisterer),
+		server.WithRecordsLimit(cfg.recordsLimit),
+		server.WithStreamingRecordsLimit(cfg.streamingRecordsLimit),
 	}
 
 	handler := server.Handler(&composableRouter{

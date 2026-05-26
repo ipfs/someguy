@@ -15,11 +15,18 @@ The following emojis are used to highlight certain changes:
 
 ### Added
 
+- `--records-limit` / `SOMEGUY_RECORDS_LIMIT` (default `100`) caps results for `Accept: application/json`, matching the SHOULD-cap in [HTTP Routing v1 §4.1.5](https://specs.ipfs.tech/routing/http-routing-v1/). Set to `0` to disable the cap.
+- `--streaming-records-limit` / `SOMEGUY_STREAMING_RECORDS_LIMIT` (default `1000`) caps results for `Accept: application/x-ndjson`. Set to `0` to disable the cap.
+
 ### Changed
+
+- ✨ JSON responses return up to 100 providers (previously 20). NDJSON streams up to 1000 results (previously unbounded). Both caps are tunable via the new flags.
 
 ### Removed
 
 ### Fixed
+
+- JSON delegated routing requests now surface close to the requested number of providers. The boxo server enforces the records limit after filtering, so records without addresses no longer shrink the response below `--records-limit`.
 
 ### Security
 
