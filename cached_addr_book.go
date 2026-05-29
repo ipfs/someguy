@@ -15,6 +15,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
+	"github.com/libp2p/go-libp2p/core/record"
 	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoremem"
 	"github.com/libp2p/go-libp2p/p2p/protocol/circuitv2/relay"
 	ma "github.com/multiformats/go-multiaddr"
@@ -197,20 +198,17 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 				peerStateSize.Set(float64(cab.peerCache.Len())) // update metric
 
 				ttl := cab.getTTL(host.Network().Connectedness(ev.Peer))
-				if ev.SignedPeerRecord != nil {
-					logger.Debug("Caching signed peer record")
-					cab, ok := peerstore.GetCertifiedAddrBook(cab.addrBook)
-					if ok {
-						_, err := cab.ConsumePeerRecord(ev.SignedPeerRecord, ttl)
-						if err != nil {
-							logger.Warnf("failed to consume signed peer record: %v", err)
-						}
-					}
-				} else {
-					logger.Debug("No signed peer record, caching listen addresses")
-					// We don't have a signed peer record, so we use the listen addresses
-					cab.addrBook.AddAddrs(ev.Peer, ev.ListenAddrs, ttl)
+
+				// A completed identify reports the peer's current advertised
+				// addresses, which supersede the set accumulated from provider
+				// records, DHT gossip, and earlier identifies. Replace the
+				// stored set instead of unioning so stale certhashes, dead
+				// relay circuits, and rotated NAT ports do not pile up.
+				var connAddrs []ma.Multiaddr
+				for _, c := range host.Network().ConnsToPeer(ev.Peer) {
+					connAddrs = append(connAddrs, c.RemoteMultiaddr())
 				}
+				cab.replacePeerAddrs(ev.Peer, ev.SignedPeerRecord, ev.ListenAddrs, connAddrs, ttl)
 			case event.EvtPeerConnectednessChanged:
 				// If the peer is not connected or limited, we update the TTL
 				if !hasValidConnectedness(ev.Connectedness) {
@@ -230,6 +228,52 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 			cab.isProbing.Store(true)
 			go cab.probePeers(ctx, host)
 		}
+	}
+}
+
+// replacePeerAddrs replaces p's stored addresses with the authoritative set
+// from a completed identify: the signed peer record, else the identify listen
+// addresses, plus any live-connection address so an active session is kept.
+//
+// Clearing first drops addresses absent from the current set (stale certhashes,
+// dead relay circuits, rotated NAT ports) instead of letting them linger to TTL.
+//
+// libp2p/go-libp2p#3487 does the same prune inside ConsumePeerRecord (not yet
+// in the pinned version); re-adding the same set here stays correct once it
+// lands, so a dependency bump will not regress this.
+func (cab *cachedAddrBook) replacePeerAddrs(p peer.ID, signed *record.Envelope, listenAddrs, connAddrs []ma.Multiaddr, ttl time.Duration) {
+	// Nothing authoritative to apply. Return before clearing so an identify that
+	// carried no usable addresses never wipes a peer's existing cached set.
+	if signed == nil && len(listenAddrs) == 0 && len(connAddrs) == 0 {
+		return
+	}
+
+	// Drop the accumulated set so addresses absent from the current advertised
+	// set are removed instead of unioned.
+	cab.addrBook.ClearAddrs(p)
+
+	accepted := false
+	if signed != nil {
+		if certBook, ok := peerstore.GetCertifiedAddrBook(cab.addrBook); ok {
+			ok, err := certBook.ConsumePeerRecord(signed, ttl)
+			if err != nil {
+				logger.Warnf("failed to consume signed peer record: %v", err)
+			}
+			accepted = ok
+		}
+	}
+	if !accepted {
+		// No signed record, no certified addr book, or the record was rejected
+		// (e.g. a sequence-number check in some go-libp2p version). Fall back to
+		// the identify listen addresses so the clear never leaves the peer with
+		// zero addresses.
+		cab.addrBook.AddAddrs(p, listenAddrs, ttl)
+	}
+
+	// Preserve live-connection addresses at the connected TTL even when absent
+	// from the advertised set, so an active session is never dropped.
+	if len(connAddrs) > 0 {
+		cab.addrBook.AddAddrs(p, connAddrs, ConnectedAddrTTL)
 	}
 }
 

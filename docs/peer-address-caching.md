@@ -73,6 +73,16 @@ dead peers are purged. A cached answer is therefore at most about an hour stale
 in the common case, which is an acceptable trade for avoiding a DHT walk per
 request.
 
+A completed identify also prunes. Addresses otherwise only accumulate: provider
+records, DHT gossip, and successive identifies each add to the union, so a peer
+can collect outdated certhashes, dead relay circuits, and rotated NAT ports.
+When an identify completes (organically or via a probe), someguy replaces the
+peer's stored set with its current advertised addresses, taken from the signed
+peer record when present and otherwise from the identify listen addresses, kept
+together with any live-connection address so an active session is never dropped.
+A reachable peer therefore collapses back to its current advertised set on each
+refresh instead of growing without bound.
+
 ## How each endpoint reads the cache
 
 Both endpoints are cache-first and share the same read path. They differ only
