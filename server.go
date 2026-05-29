@@ -174,6 +174,10 @@ func start(ctx context.Context, cfg *config) error {
 
 		opts = append(opts, WithActiveProbing(cfg.cachedAddrBookActiveProbing))
 
+		// Let the cache fall back to the host peerstore, which the DHT
+		// populates with provider addresses during FindProviders.
+		opts = append(opts, WithHostPeerstore(h.Peerstore()))
+
 		cachedAddrBook, err = newCachedAddrBook(opts...)
 		if err != nil {
 			return err

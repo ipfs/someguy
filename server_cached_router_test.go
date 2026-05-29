@@ -88,20 +88,87 @@ func TestCachedRouter(t *testing.T) {
 		require.Equal(t, publicAddr.String(), peerRecord.Addrs[0].String())
 	})
 
-	t.Run("Failed FindPeers with cached addresses does not return cached addresses", func(t *testing.T) {
+	t.Run("FindPeers serves cached addresses without consulting peer routing", func(t *testing.T) {
 		ctx := context.Background()
 		pid := peer.ID("test-peer")
 
-		// Create mock router that returns error
+		// Mock router with no FindPeers expectation: a cache hit must not reach it
 		mr := &mockRouter{}
-		mr.On("FindPeers", mock.Anything, pid, 10).Return(nil, routing.ErrNotFound)
 
-		// Create cached address book with test addresses
+		// Create cached address book with test addresses (e.g. learned from a
+		// prior provider lookup), the same peerbook FindProviders consults
 		cab, err := newCachedAddrBook()
 		require.NoError(t, err)
 
 		publicAddr := mustMultiaddr(t, "/ip4/137.21.14.12/tcp/4001")
 		cab.addrBook.AddAddrs(pid, []multiaddr.Multiaddr{publicAddr.Multiaddr}, time.Hour)
+
+		// Create cached router
+		cr := NewCachedRouter(mr, cab)
+
+		it, err := cr.FindPeers(ctx, pid, 10)
+		require.NoError(t, err)
+
+		results, err := iter.ReadAllResults(it)
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+
+		// Verify cached addresses were returned cache-first
+		require.Equal(t, pid, *results[0].ID)
+		require.Len(t, results[0].Addrs, 1)
+		require.Equal(t, publicAddr.String(), results[0].Addrs[0].String())
+
+		// Peer routing must not be consulted on a cache hit
+		mr.AssertNotCalled(t, "FindPeers", mock.Anything, pid, 10)
+	})
+
+	t.Run("FindProviders caches observed addrs so FindPeers can serve them", func(t *testing.T) {
+		ctx := context.Background()
+		c := makeCID()
+		pid := peer.ID("test-peer")
+		publicAddr := mustMultiaddr(t, "/ip4/137.21.14.12/tcp/4001")
+
+		// FindProviders returns a provider record with addrs embedded (as the
+		// DHT does), while peer routing reports the peer as not found.
+		mr := &mockRouter{}
+		provIter := newMockResultIter([]iter.Result[types.Record]{
+			{Val: &types.PeerRecord{Schema: "peer", ID: &pid, Addrs: []types.Multiaddr{publicAddr}}},
+		})
+		mr.On("FindProviders", mock.Anything, c, 10).Return(provIter, nil)
+		mr.On("FindPeers", mock.Anything, pid, 10).Return(nil, routing.ErrNotFound)
+
+		cab, err := newCachedAddrBook(WithAllowPrivateIPs())
+		require.NoError(t, err)
+		cr := NewCachedRouter(mr, cab)
+
+		// Drain FindProviders so the observed addrs get cached
+		provResults, err := cr.FindProviders(ctx, c, 10)
+		require.NoError(t, err)
+		_, err = iter.ReadAllResults(provResults)
+		require.NoError(t, err)
+
+		// FindPeers misses peer routing but should now serve cached addrs
+		it, err := cr.FindPeers(ctx, pid, 10)
+		require.NoError(t, err)
+		results, err := iter.ReadAllResults(it)
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+		require.Equal(t, pid, *results[0].ID)
+		require.Len(t, results[0].Addrs, 1)
+		require.Equal(t, publicAddr.String(), results[0].Addrs[0].String())
+	})
+
+	t.Run("FindPeers not found with empty cache returns ErrNotFound", func(t *testing.T) {
+		ctx := context.Background()
+		pid := peer.ID("test-peer")
+
+		// Create mock router that reports the peer as not found via peer routing
+		mr := &mockRouter{}
+		mr.On("FindPeers", mock.Anything, pid, 10).Return(nil, routing.ErrNotFound)
+
+		// Create empty cached address book
+		cab, err := newCachedAddrBook()
+		require.NoError(t, err)
 
 		// Create cached router
 		cr := NewCachedRouter(mr, cab)

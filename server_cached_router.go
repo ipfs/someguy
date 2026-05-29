@@ -69,14 +69,28 @@ func (r cachedRouter) FindProviders(ctx context.Context, key cid.Cid, limit int)
 	return iter, nil
 }
 
-// FindPeers uses a simpler approach than FindProviders because we're dealing with a single PeerRecord, and there's
-// no point in trying to dispatch an additional FindPeer call.
+// FindPeers serves addresses cache-first, the same way FindProviders does.
+// someguy is a caching routing proxy, not a libp2p node, so it favors a
+// low-latency answer drawn from recently seen, actively probed peers over a
+// fresh DHT walk on every request. It consults the cache first and falls back
+// to peer routing only on a miss. See docs/peer-address-caching.md.
 func (r cachedRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
+	// Cache-first: answer from the peerbook when we already hold addresses.
+	if cachedAddrs := r.withAddrsFromCache(addrQueryOriginPeers, pid, nil); len(cachedAddrs) > 0 {
+		rec := &types.PeerRecord{
+			Schema: types.SchemaPeer,
+			ID:     &pid,
+			Addrs:  cachedAddrs,
+		}
+		return iter.ToResultIter(iter.FromSlice([]*types.PeerRecord{rec})), nil
+	}
+
+	// Cache miss: fall back to the underlying peer routing (DHT).
 	it, err := r.router.FindPeers(ctx, pid, limit)
 
 	if err == routing.ErrNotFound {
-		// ErrNotFound will be returned if either dialing the peer failed or the peer was not found
-		r.cachedAddrBook.RecordFailedConnection(pid) // record the failure used for probing/backoff purposes
+		// Record the failure used for probing/backoff purposes.
+		r.cachedAddrBook.RecordFailedConnection(pid)
 		return nil, routing.ErrNotFound
 	}
 
@@ -84,9 +98,15 @@ func (r cachedRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (it
 		return nil, err
 	}
 
-	// update the metrics to indicate that we didn't look up the cache for this lookup
-	peerAddrLookups.WithLabelValues(addrCacheStateUnused, addrQueryOriginPeers).Inc()
-	return it, nil
+	// Enrich records that came back without addresses from the peerbook,
+	// matching the behavior of FindProviders and GetClosestPeers.
+	return iter.Map(it, func(v iter.Result[*types.PeerRecord]) iter.Result[*types.PeerRecord] {
+		if v.Err != nil || v.Val == nil || v.Val.ID == nil {
+			return v
+		}
+		v.Val.Addrs = r.withAddrsFromCache(addrQueryOriginPeers, *v.Val.ID, v.Val.Addrs)
+		return v
+	}), nil
 }
 
 func (r cachedRouter) GetClosestPeers(ctx context.Context, key cid.Cid) (iter.ResultIter[*types.PeerRecord], error) {
@@ -187,8 +207,16 @@ func (it *cacheFallbackIter) Next() bool {
 			switch val.Val.GetSchema() {
 			case types.SchemaPeer:
 				if record, ok := val.Val.(*types.PeerRecord); ok {
+					hadSourceAddrs := len(record.Addrs) > 0
 					record.Addrs = it.router.withAddrsFromCache(it.queryOrigin, *record.ID, record.Addrs)
 					if len(record.Addrs) > 0 {
+						// Remember addresses observed in provider records so a later
+						// FindPeers for this peer can serve them from the peerbook.
+						// Only cache addrs that came from the source (not ones we
+						// just read back from cache) to avoid pointless re-adds.
+						if hadSourceAddrs && it.queryOrigin == addrQueryOriginProviders {
+							it.router.cachedAddrBook.CacheAddrs(*record.ID, record.Addrs)
+						}
 						it.current = iter.Result[types.Record]{Val: record}
 						return true
 					}

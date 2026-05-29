@@ -10,7 +10,9 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/p2p/host/eventbus"
+	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoremem"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,6 +25,44 @@ func TestCachedAddrBook(t *testing.T) {
 	require.NotNil(t, cab)
 	require.NotNil(t, cab.peerCache)
 	require.NotNil(t, cab.addrBook)
+}
+
+func TestGetCachedAddrsHostPeerstoreFallback(t *testing.T) {
+	testPeer, err := peer.Decode("12D3KooWCZ67sU8oCvKd82Y6c9NgpqgoZYuZEUcg4upHCjK3n1aj")
+	require.NoError(t, err)
+	addr := ma.StringCast("/ip4/137.21.14.12/tcp/4001")
+
+	t.Run("falls back to host peerstore when addrBook is empty", func(t *testing.T) {
+		hostPeerstore := pstoremem.NewAddrBook()
+		hostPeerstore.AddAddrs(testPeer, []ma.Multiaddr{addr}, peerstore.TempAddrTTL)
+
+		cab, err := newCachedAddrBook(WithAllowPrivateIPs(), WithHostPeerstore(hostPeerstore))
+		require.NoError(t, err)
+
+		got := cab.GetCachedAddrs(testPeer)
+		require.Len(t, got, 1)
+		require.Equal(t, addr.String(), got[0].String())
+	})
+
+	t.Run("prefers addrBook over host peerstore", func(t *testing.T) {
+		ownAddr := ma.StringCast("/ip4/1.2.3.4/tcp/4001")
+		hostPeerstore := pstoremem.NewAddrBook()
+		hostPeerstore.AddAddrs(testPeer, []ma.Multiaddr{addr}, peerstore.TempAddrTTL)
+
+		cab, err := newCachedAddrBook(WithAllowPrivateIPs(), WithHostPeerstore(hostPeerstore))
+		require.NoError(t, err)
+		cab.addrBook.AddAddrs(testPeer, []ma.Multiaddr{ownAddr}, time.Hour)
+
+		got := cab.GetCachedAddrs(testPeer)
+		require.Len(t, got, 1)
+		require.Equal(t, ownAddr.String(), got[0].String())
+	})
+
+	t.Run("returns nil when both are empty", func(t *testing.T) {
+		cab, err := newCachedAddrBook(WithAllowPrivateIPs(), WithHostPeerstore(pstoremem.NewAddrBook()))
+		require.NoError(t, err)
+		require.Nil(t, cab.GetCachedAddrs(testPeer))
+	})
 }
 
 func TestBackground(t *testing.T) {

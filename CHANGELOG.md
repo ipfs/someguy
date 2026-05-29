@@ -21,6 +21,8 @@ The following emojis are used to highlight certain changes:
 
 ### Fixed
 
+- `/routing/v1/peers/{peerid}` now serves addresses cache-first, the same way `/routing/v1/providers/{cid}` does. It answers from the cached address book and host peerstore before falling back to a DHT lookup, so a relay-dependent peer that is absent from peer routing but recently seen as a provider is no longer answered with an empty result. See [`docs/peer-address-caching.md`](docs/peer-address-caching.md).
+
 ### Security
 
 ## [v0.13.0] - 2026-05-26

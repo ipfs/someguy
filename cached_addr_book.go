@@ -93,6 +93,7 @@ type peerState struct {
 
 type cachedAddrBook struct {
 	addrBook             peerstore.AddrBook             // memory address book
+	peerstore            peerstore.AddrBook             // host peerstore, populated by the DHT (read-only fallback)
 	peerCache            *lru.Cache[peer.ID, peerState] // LRU cache with additional metadata about peer
 	probingEnabled       bool
 	isProbing            atomic.Bool
@@ -101,6 +102,17 @@ type cachedAddrBook struct {
 }
 
 type AddrBookOption func(*cachedAddrBook) error
+
+// WithHostPeerstore lets GetCachedAddrs fall back to the host peerstore, which
+// go-libp2p-kad-dht populates with provider addresses during FindProviders
+// (under a short TempAddrTTL). This catches peers seen very recently as
+// providers that have not yet been copied into the longer-lived addrBook.
+func WithHostPeerstore(ps peerstore.AddrBook) AddrBookOption {
+	return func(cab *cachedAddrBook) error {
+		cab.peerstore = ps
+		return nil
+	}
+}
 
 func WithAllowPrivateIPs() AddrBookOption {
 	return func(cab *cachedAddrBook) error {
@@ -286,6 +298,13 @@ func (cab *cachedAddrBook) probePeers(ctx context.Context, host host.Host) {
 func (cab *cachedAddrBook) GetCachedAddrs(p peer.ID) []types.Multiaddr {
 	cachedAddrs := cab.addrBook.Addrs(p)
 
+	// Fall back to the host peerstore, which the DHT fills with provider
+	// addresses during FindProviders (short TempAddrTTL). Lets peer routing
+	// serve a peer seen as a provider moments ago but absent from peer routing.
+	if len(cachedAddrs) == 0 && cab.peerstore != nil {
+		cachedAddrs = cab.peerstore.Addrs(p)
+	}
+
 	if len(cachedAddrs) == 0 {
 		return nil
 	}
@@ -295,6 +314,32 @@ func (cab *cachedAddrBook) GetCachedAddrs(p peer.ID) []types.Multiaddr {
 		result = append(result, types.Multiaddr{Multiaddr: addr})
 	}
 	return result
+}
+
+// CacheAddrs stores addresses observed for a peer outside of a direct
+// connection (e.g. embedded in a provider record returned by FindProviders) so
+// that later peer-routing lookups can serve them from the same peerbook.
+// Private addresses are dropped unless explicitly allowed. These addresses are
+// unverified, so they are stored with the recently-connected TTL and will be
+// confirmed or evicted by the probe loop.
+func (cab *cachedAddrBook) CacheAddrs(p peer.ID, addrs []types.Multiaddr) {
+	if len(addrs) == 0 {
+		return
+	}
+
+	maddrs := make([]ma.Multiaddr, 0, len(addrs))
+	for _, addr := range addrs {
+		if !cab.allowPrivateIPs && !manet.IsPublicAddr(addr.Multiaddr) {
+			continue
+		}
+		maddrs = append(maddrs, addr.Multiaddr)
+	}
+
+	if len(maddrs) == 0 {
+		return
+	}
+
+	cab.addrBook.AddAddrs(p, maddrs, cab.recentlyConnectedTTL)
 }
 
 // Update the peer cache with information about a failed connection
