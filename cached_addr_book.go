@@ -93,8 +93,8 @@ type peerState struct {
 }
 
 type cachedAddrBook struct {
-	addrBook             peerstore.AddrBook             // memory address book
-	peerstore            peerstore.AddrBook             // host peerstore, populated by the DHT (read-only fallback)
+	addrBook             peerstore.AddrBook             // someguy's own address book: durable, probed, written here
+	hostPeerstore        peerstore.AddrBook             // libp2p host peerstore, DHT-populated, read-only fallback
 	peerCache            *lru.Cache[peer.ID, peerState] // LRU cache with additional metadata about peer
 	probingEnabled       bool
 	isProbing            atomic.Bool
@@ -104,13 +104,14 @@ type cachedAddrBook struct {
 
 type AddrBookOption func(*cachedAddrBook) error
 
-// WithHostPeerstore lets GetCachedAddrs fall back to the host peerstore, which
-// go-libp2p-kad-dht populates with provider addresses during FindProviders
-// (under a short TempAddrTTL). This catches peers seen very recently as
-// providers that have not yet been copied into the longer-lived addrBook.
+// WithHostPeerstore lets GetCachedAddrs fall back to the libp2p host peerstore,
+// which go-libp2p-kad-dht populates with provider addresses during
+// FindProviders (under a short TempAddrTTL). This catches peers seen very
+// recently as providers that have not yet been copied into someguy's own
+// longer-lived address book.
 func WithHostPeerstore(ps peerstore.AddrBook) AddrBookOption {
 	return func(cab *cachedAddrBook) error {
-		cab.peerstore = ps
+		cab.hostPeerstore = ps
 		return nil
 	}
 }
@@ -204,9 +205,16 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 				// records, DHT gossip, and earlier identifies. Replace the
 				// stored set instead of unioning so stale certhashes, dead
 				// relay circuits, and rotated NAT ports do not pile up.
+				//
+				// Drop the remote addresses of inbound connections: that is the
+				// peer's ephemeral source port, which nobody can dial back to,
+				// so caching it would reintroduce exactly the junk this prune
+				// removes. Outbound (and direction-unknown) remotes are kept.
 				var connAddrs []ma.Multiaddr
 				for _, c := range host.Network().ConnsToPeer(ev.Peer) {
-					connAddrs = append(connAddrs, c.RemoteMultiaddr())
+					if c.Stat().Direction != network.DirInbound {
+						connAddrs = append(connAddrs, c.RemoteMultiaddr())
+					}
 				}
 				cab.replacePeerAddrs(ev.Peer, ev.SignedPeerRecord, ev.ListenAddrs, connAddrs, ttl)
 			case event.EvtPeerConnectednessChanged:
@@ -345,8 +353,8 @@ func (cab *cachedAddrBook) GetCachedAddrs(p peer.ID) []types.Multiaddr {
 	// Fall back to the host peerstore, which the DHT fills with provider
 	// addresses during FindProviders (short TempAddrTTL). Lets peer routing
 	// serve a peer seen as a provider moments ago but absent from peer routing.
-	if len(cachedAddrs) == 0 && cab.peerstore != nil {
-		cachedAddrs = cab.peerstore.Addrs(p)
+	if len(cachedAddrs) == 0 && cab.hostPeerstore != nil {
+		cachedAddrs = cab.hostPeerstore.Addrs(p)
 	}
 
 	if len(cachedAddrs) == 0 {
