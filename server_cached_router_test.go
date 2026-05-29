@@ -10,6 +10,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/routing"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -156,6 +157,42 @@ func TestCachedRouter(t *testing.T) {
 		require.Equal(t, pid, *results[0].ID)
 		require.Len(t, results[0].Addrs, 1)
 		require.Equal(t, publicAddr.String(), results[0].Addrs[0].String())
+	})
+
+	t.Run("FindPeers enrich step does not double-count peer_addr_lookups", func(t *testing.T) {
+		ctx := context.Background()
+		pid := peer.ID("test-peer")
+		publicAddr := mustMultiaddr(t, "/ip4/137.21.14.12/tcp/4001")
+
+		// Cache is empty, so FindPeers falls through to peer routing, which
+		// returns a record carrying its own addresses.
+		mr := &mockRouter{}
+		dhtIter := newMockResultIter([]iter.Result[*types.PeerRecord]{
+			{Val: &types.PeerRecord{Schema: "peer", ID: &pid, Addrs: []types.Multiaddr{publicAddr}}},
+		})
+		mr.On("FindPeers", mock.Anything, pid, 10).Return(dhtIter, nil)
+
+		cab, err := newCachedAddrBook()
+		require.NoError(t, err)
+		cr := NewCachedRouter(mr, cab)
+
+		// The {unused, peers} series is written by exactly one line: the
+		// cache-first lookup passes nil addrs and can never hit it, and no other
+		// origin uses "peers". So this delta isolates the old enrich double-count
+		// without being polluted by the process-global counter under -count or
+		// parallel sibling tests (which only touch hit/miss).
+		unusedBefore := testutil.ToFloat64(peerAddrLookups.WithLabelValues(addrCacheStateUnused, addrQueryOriginPeers))
+
+		it, err := cr.FindPeers(ctx, pid, 10)
+		require.NoError(t, err)
+		_, err = iter.ReadAllResults(it)
+		require.NoError(t, err)
+
+		unusedAfter := testutil.ToFloat64(peerAddrLookups.WithLabelValues(addrCacheStateUnused, addrQueryOriginPeers))
+
+		// The post-DHT enrich step must not record a second lookup for a record
+		// the DHT already supplied addresses for.
+		require.Equal(t, 0.0, unusedAfter-unusedBefore, "enrich step must not record an unused lookup")
 	})
 
 	t.Run("FindPeers not found with empty cache returns ErrNotFound", func(t *testing.T) {

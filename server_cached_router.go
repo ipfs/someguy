@@ -98,13 +98,17 @@ func (r cachedRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (it
 		return nil, err
 	}
 
-	// Enrich records that came back without addresses from the peerbook,
-	// matching the behavior of FindProviders and GetClosestPeers.
+	// Enrich records that came back without addresses from the peerbook.
+	// Read the cache directly rather than via withAddrsFromCache: FindPeers
+	// already recorded this request's outcome through the cache-first lookup
+	// above, so recording here would double-count peer_addr_lookups.
 	return iter.Map(it, func(v iter.Result[*types.PeerRecord]) iter.Result[*types.PeerRecord] {
 		if v.Err != nil || v.Val == nil || v.Val.ID == nil {
 			return v
 		}
-		v.Val.Addrs = r.withAddrsFromCache(addrQueryOriginPeers, *v.Val.ID, v.Val.Addrs)
+		if len(v.Val.Addrs) == 0 {
+			v.Val.Addrs = r.cachedAddrBook.GetCachedAddrs(*v.Val.ID)
+		}
 		return v
 	}), nil
 }
