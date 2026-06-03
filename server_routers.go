@@ -248,6 +248,16 @@ func (mi *manyIter[T]) Close() error {
 // validity. A record past its EOL is cryptographically invalid, so returning it
 // only hands the caller a record that fails validation. Records with a non-EOL
 // validity type or an unreadable validity are treated as not expired.
+//
+// Every backend already validates the record it returns, so this is a
+// re-check rather than the first line of defense. We still do it because a
+// signature is immutable and verified once, but EOL is time-varying: the
+// longer a record lingers (a cache hit, a stored copy, clock drift between
+// our infrastructure and the producer), the more likely it has expired
+// between the backend's check and the moment we hand it to the user.
+// parallelRouter is first-result-wins with no revalidation, so without this
+// the aggregator could let an expired record win the race. See
+// https://github.com/ipfs/boxo/pull/1166 for the upstream cache-control fix.
 func isExpiredIPNSRecord(rec *ipns.Record) bool {
 	if rec == nil {
 		return false
