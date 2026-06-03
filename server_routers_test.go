@@ -89,6 +89,17 @@ func makeIPNSRecord(t *testing.T, sk crypto.PrivKey, opts ...ipns.Option) (*ipns
 	return record, rawRecord
 }
 
+func makeExpiredIPNSRecord(t *testing.T, sk crypto.PrivKey) *ipns.Record {
+	cid, err := cid.Decode("bafkreifjjcie6lypi6ny7amxnfftagclbuxndqonfipmb64f2km2devei4")
+	require.NoError(t, err)
+
+	// EOL in the past so the record is already expired
+	record, err := ipns.NewRecord(sk, path.FromCid(cid), 1, time.Now().Add(-time.Hour), time.Second*20)
+	require.NoError(t, err)
+
+	return record
+}
+
 func TestGetIPNS(t *testing.T) {
 	t.Parallel()
 
@@ -157,6 +168,47 @@ func TestGetIPNS(t *testing.T) {
 
 		_, err := r.GetIPNS(ctx, name)
 		require.ErrorIs(t, err, routing.ErrNotFound)
+	})
+
+	t.Run("Expired Record Treated As Not Found", func(t *testing.T) {
+		ctx := context.Background()
+
+		expired := makeExpiredIPNSRecord(t, sk)
+
+		mr1 := &mockRouter{}
+		mr1.On("GetIPNS", mock.Anything, name).Return(expired, nil)
+
+		r := parallelRouter{
+			routers: []router{
+				composableRouter{ipns: mr1},
+			},
+		}
+
+		_, err := r.GetIPNS(ctx, name)
+		require.ErrorIs(t, err, routing.ErrNotFound)
+	})
+
+	t.Run("Skips Expired Record For Valid One", func(t *testing.T) {
+		ctx := context.Background()
+
+		expired := makeExpiredIPNSRecord(t, sk)
+
+		mr1 := &mockRouter{}
+		mr1.On("GetIPNS", mock.Anything, name).Return(expired, nil)
+
+		mr2 := &mockRouter{}
+		mr2.On("GetIPNS", mock.Anything, name).Return(rec, nil)
+
+		r := parallelRouter{
+			routers: []router{
+				composableRouter{ipns: mr1},
+				composableRouter{ipns: mr2},
+			},
+		}
+
+		getRec, err := r.GetIPNS(ctx, name)
+		require.NoError(t, err)
+		require.EqualValues(t, rec, getRec)
 	})
 }
 

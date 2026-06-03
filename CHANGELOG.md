@@ -21,6 +21,8 @@ The following emojis are used to highlight certain changes:
 
 ### Fixed
 
+- `GetIPNS` no longer returns an IPNS record whose EOL has already passed. An expired record is cryptographically invalid, so it is treated as not found, and when multiple routers answer the first non-expired record is returned.
+
 ### Security
 
 ## [v0.13.0] - 2026-05-26
