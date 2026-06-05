@@ -246,12 +246,48 @@ func (mi *manyIter[T]) Close() error {
 	return err
 }
 
+// isExpiredIPNSRecord reports whether an EOL-type IPNS record has passed its
+// validity. A record past its EOL is cryptographically invalid, so returning it
+// only hands the caller a record that fails validation. Records with a non-EOL
+// validity type or an unreadable validity are treated as not expired.
+//
+// Every backend already validates the record it returns, so this is a
+// re-check rather than the first line of defense. We still do it because a
+// signature is immutable and verified once, but EOL is time-varying: the
+// longer a record lingers (a cache hit, a stored copy, clock drift between
+// our infrastructure and the producer), the more likely it has expired
+// between the backend's check and the moment we hand it to the user.
+// parallelRouter is first-result-wins with no revalidation, so without this
+// the aggregator could let an expired record win the race. See
+// https://github.com/ipfs/boxo/pull/1166 for the upstream cache-control fix.
+func isExpiredIPNSRecord(rec *ipns.Record) bool {
+	if rec == nil {
+		return false
+	}
+	validityType, err := rec.ValidityType()
+	if err != nil || validityType != ipns.ValidityEOL {
+		return false
+	}
+	validity, err := rec.Validity()
+	if err != nil {
+		return false
+	}
+	return time.Now().After(validity)
+}
+
 func (r parallelRouter) GetIPNS(ctx context.Context, name ipns.Name) (*ipns.Record, error) {
 	switch len(r.routers) {
 	case 0:
 		return nil, routing.ErrNotFound
 	case 1:
-		return r.routers[0].GetIPNS(ctx, name)
+		rec, err := r.routers[0].GetIPNS(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+		if isExpiredIPNSRecord(rec) {
+			return nil, routing.ErrNotFound
+		}
+		return rec, nil
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -284,6 +320,11 @@ func (r parallelRouter) GetIPNS(ctx context.Context, name ipns.Name) (*ipns.Reco
 		case res := <-results:
 			switch res.err {
 			case nil:
+				// An expired record is invalid and must not be served; treat it
+				// as not found and keep waiting for another router to answer.
+				if isExpiredIPNSRecord(res.val) {
+					continue
+				}
 				return res.val, nil
 			case routing.ErrNotFound, routing.ErrNotSupported:
 				continue
