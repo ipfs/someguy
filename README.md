@@ -8,7 +8,7 @@
 [![GitHub Release](https://img.shields.io/github/v/release/ipfs/someguy?filter=!*rc*)](https://github.com/ipfs/someguy/releases)
 [![Go Reference](https://pkg.go.dev/badge/github.com/ipfs/someguy.svg)](https://pkg.go.dev/github.com/ipfs/someguy)
 
-Someguy is an [HTTP Delegated Routing V1](https://specs.ipfs.tech/routing/http-routing-v1/) server that proxies requests to the [Amino DHT](https://docs.ipfs.tech/concepts/glossary/#amino) and other Delegated Routing servers such as the [Network Indexer](https://cid.contact).
+Someguy is an [HTTP Delegated Routing V1](https://specs.ipfs.tech/routing/http-routing-v1/) server that proxies requests to the [Amino DHT](https://docs.ipfs.tech/concepts/glossary/#amino) and other [delegated routing servers](https://specs.ipfs.tech/routing/http-routing-v1/).
 
 [Shipyard](https://ipshipyard.com/) also runs a [public Someguy instance](https://docs.ipfs.tech/concepts/public-utilities/#delegated-routing-endpoint) at `https://delegated-ipfs.dev/routing/v1`.
 
@@ -53,7 +53,7 @@ Run `someguy` as a client or as a server.
 
 ### Server
 
-Start the server with `someguy start`. By default it proxies requests to the [IPFS Amino DHT](https://blog.ipfs.tech/2023-09-amino-refactoring/) and the [cid.contact](https://cid.contact) indexer (IPNI) node.
+Start the server with `someguy start`. By default it proxies requests to the [IPFS Amino DHT](https://blog.ipfs.tech/2023-09-amino-refactoring/) and other [Delegated Routing V1](https://specs.ipfs.tech/routing/http-routing-v1/) servers.
 
 For more details, run `someguy start --help`.
 
@@ -83,6 +83,13 @@ someguy start --ipns-endpoints https://example.com
 ```
 
 See [environment-variables.md](docs/environment-variables.md) for URL formats and configuration details.
+
+## Documentation
+
+- [environment-variables.md](docs/environment-variables.md): all config flags and environment variables
+- [peer-address-caching.md](docs/peer-address-caching.md): how `/providers` and `/peers` cache and refresh peer addresses
+- [metrics.md](docs/metrics.md): Prometheus metrics
+- [tracing.md](docs/tracing.md): OpenTelemetry tracing
 
 ## Deployment
 
