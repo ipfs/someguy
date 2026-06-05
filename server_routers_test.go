@@ -717,3 +717,44 @@ func TestManyIter(t *testing.T) {
 		require.NoError(t, manyIter.Close())
 	})
 }
+
+func TestFilterPrivateMultiaddrSortsAndFilters(t *testing.T) {
+	mustAddr := func(s string) types.Multiaddr {
+		m, err := multiaddr.NewMultiaddr(s)
+		require.NoError(t, err)
+		return types.Multiaddr{Multiaddr: m}
+	}
+
+	priv := mustAddr("/ip4/192.168.1.5/tcp/4001")
+	input := []types.Multiaddr{
+		mustAddr("/ip4/9.9.9.9/tcp/4001"),
+		priv, // private, must be filtered out
+		mustAddr("/ip4/1.1.1.1/udp/4001/quic-v1"),
+		mustAddr("/ip4/5.5.5.5/tcp/4001"),
+	}
+
+	// Shuffle into several orders; the output must be identical every time and
+	// must never contain the private address.
+	var want []string
+	for _, order := range [][]int{{0, 1, 2, 3}, {3, 2, 1, 0}, {2, 0, 3, 1}, {1, 3, 0, 2}} {
+		in := make([]types.Multiaddr, 0, len(order))
+		for _, i := range order {
+			in = append(in, input[i])
+		}
+
+		out := filterPrivateMultiaddr(in)
+
+		got := make([]string, 0, len(out))
+		for _, a := range out {
+			got = append(got, a.String())
+			require.NotEqual(t, priv.String(), a.String(), "private addr leaked")
+		}
+		require.Len(t, got, 3)
+
+		if want == nil {
+			want = got
+		} else {
+			require.Equal(t, want, got, "output order is not stable across input orders")
+		}
+	}
+}

@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"sync"
 	"time"
 
@@ -601,6 +603,13 @@ func filterPrivateMultiaddr(a []types.Multiaddr) []types.Multiaddr {
 
 		b = append(b, addr)
 	}
+
+	// Sort for a stable response across requests. Addresses can arrive in
+	// nondeterministic order (e.g. the peerstore stores them in a map), and
+	// this runs on every record from every router, so all sources are covered.
+	slices.SortFunc(b, func(x, y types.Multiaddr) int {
+		return bytes.Compare(x.Multiaddr.Bytes(), y.Multiaddr.Bytes())
+	})
 
 	return b
 }

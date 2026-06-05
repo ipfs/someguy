@@ -10,7 +10,9 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/p2p/host/eventbus"
+	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoremem"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,6 +25,114 @@ func TestCachedAddrBook(t *testing.T) {
 	require.NotNil(t, cab)
 	require.NotNil(t, cab.peerCache)
 	require.NotNil(t, cab.addrBook)
+}
+
+func TestGetCachedAddrsHostPeerstoreFallback(t *testing.T) {
+	testPeer, err := peer.Decode("12D3KooWCZ67sU8oCvKd82Y6c9NgpqgoZYuZEUcg4upHCjK3n1aj")
+	require.NoError(t, err)
+	addr := ma.StringCast("/ip4/137.21.14.12/tcp/4001")
+
+	t.Run("falls back to host peerstore when addrBook is empty", func(t *testing.T) {
+		hostPeerstore := pstoremem.NewAddrBook()
+		hostPeerstore.AddAddrs(testPeer, []ma.Multiaddr{addr}, peerstore.TempAddrTTL)
+
+		cab, err := newCachedAddrBook(WithAllowPrivateIPs(), WithHostPeerstore(hostPeerstore))
+		require.NoError(t, err)
+
+		got := cab.GetCachedAddrs(testPeer)
+		require.Len(t, got, 1)
+		require.Equal(t, addr.String(), got[0].String())
+	})
+
+	t.Run("prefers addrBook over host peerstore", func(t *testing.T) {
+		ownAddr := ma.StringCast("/ip4/1.2.3.4/tcp/4001")
+		hostPeerstore := pstoremem.NewAddrBook()
+		hostPeerstore.AddAddrs(testPeer, []ma.Multiaddr{addr}, peerstore.TempAddrTTL)
+
+		cab, err := newCachedAddrBook(WithAllowPrivateIPs(), WithHostPeerstore(hostPeerstore))
+		require.NoError(t, err)
+		cab.addrBook.AddAddrs(testPeer, []ma.Multiaddr{ownAddr}, time.Hour)
+
+		got := cab.GetCachedAddrs(testPeer)
+		require.Len(t, got, 1)
+		require.Equal(t, ownAddr.String(), got[0].String())
+	})
+
+	t.Run("returns nil when both are empty", func(t *testing.T) {
+		cab, err := newCachedAddrBook(WithAllowPrivateIPs(), WithHostPeerstore(pstoremem.NewAddrBook()))
+		require.NoError(t, err)
+		require.Nil(t, cab.GetCachedAddrs(testPeer))
+	})
+}
+
+func TestReplacePeerAddrsPrunesStaleAddrs(t *testing.T) {
+	cab, err := newCachedAddrBook(WithAllowPrivateIPs())
+	require.NoError(t, err)
+
+	p := peer.ID("test-peer")
+
+	// Seed an accumulated set, as if learned from provider records and gossip.
+	stale := []ma.Multiaddr{
+		ma.StringCast("/ip4/1.1.1.1/tcp/4001"),
+		ma.StringCast("/ip4/2.2.2.2/udp/4001/quic-v1"),
+	}
+	cab.addrBook.AddAddrs(p, stale, time.Hour)
+	require.Len(t, cab.addrBook.Addrs(p), 2)
+
+	// A completed identify reports a different current set (no signed record),
+	// plus one address held by a live connection.
+	current := []ma.Multiaddr{ma.StringCast("/ip4/3.3.3.3/tcp/4001")}
+	connAddr := ma.StringCast("/ip4/4.4.4.4/tcp/4001")
+
+	cab.replacePeerAddrs(p, nil, current, []ma.Multiaddr{connAddr}, time.Hour)
+
+	got := make([]string, 0)
+	for _, a := range cab.addrBook.Addrs(p) {
+		got = append(got, a.String())
+	}
+
+	// Stale addrs are gone; the current advertised addr and the live-connection
+	// addr remain.
+	require.ElementsMatch(t, []string{
+		"/ip4/3.3.3.3/tcp/4001",
+		"/ip4/4.4.4.4/tcp/4001",
+	}, got)
+}
+
+func TestReplacePeerAddrsKeepsLiveConnWhenAdvertisedSetEmpty(t *testing.T) {
+	cab, err := newCachedAddrBook(WithAllowPrivateIPs())
+	require.NoError(t, err)
+
+	p := peer.ID("test-peer")
+	connAddr := ma.StringCast("/ip4/4.4.4.4/tcp/4001")
+
+	// Identify reported no usable listen addrs, but we hold a live connection.
+	cab.replacePeerAddrs(p, nil, nil, []ma.Multiaddr{connAddr}, time.Hour)
+
+	got := make([]string, 0)
+	for _, a := range cab.addrBook.Addrs(p) {
+		got = append(got, a.String())
+	}
+	require.Equal(t, []string{"/ip4/4.4.4.4/tcp/4001"}, got)
+}
+
+func TestReplacePeerAddrsEmptyInputKeepsExistingAddrs(t *testing.T) {
+	cab, err := newCachedAddrBook(WithAllowPrivateIPs())
+	require.NoError(t, err)
+
+	p := peer.ID("test-peer")
+	existing := ma.StringCast("/ip4/1.1.1.1/tcp/4001")
+	cab.addrBook.AddAddrs(p, []ma.Multiaddr{existing}, time.Hour)
+
+	// An identify with no signed record, no listen addrs, and no live
+	// connection must not wipe the peer's existing cached addresses.
+	cab.replacePeerAddrs(p, nil, nil, nil, time.Hour)
+
+	got := make([]string, 0)
+	for _, a := range cab.addrBook.Addrs(p) {
+		got = append(got, a.String())
+	}
+	require.Equal(t, []string{"/ip4/1.1.1.1/tcp/4001"}, got)
 }
 
 func TestBackground(t *testing.T) {
@@ -227,6 +337,11 @@ type mockNetwork struct {
 func (mn *mockNetwork) Connectedness(p peer.ID) network.Connectedness {
 	// Simulate not connected state
 	return network.NotConnected
+}
+
+func (mn *mockNetwork) ConnsToPeer(p peer.ID) []network.Conn {
+	// No live connections in tests
+	return nil
 }
 
 func (mh *mockHost) EventBus() event.Bus {
