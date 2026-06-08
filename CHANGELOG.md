@@ -17,16 +17,21 @@ The following emojis are used to highlight certain changes:
 
 ### Changed
 
+- [boxo v0.41.0](https://github.com/ipfs/boxo/releases/tag/v0.41.0) [#155](https://github.com/ipfs/someguy/pull/155)
+
 ### Removed
 
 ### Fixed
 
 - `GetIPNS` no longer returns an IPNS record whose EOL has already passed. An expired record is cryptographically invalid, so it is treated as not found, and when multiple routers answer the first non-expired record is returned. [#154](https://github.com/ipfs/someguy/pull/154)
-- `/routing/v1/peers/{peerid}` now serves addresses cache-first, the same way `/routing/v1/providers/{cid}` does. It answers from the cached address book and host peerstore before falling back to a DHT lookup, so a relay-dependent peer that is absent from peer routing but recently seen as a provider is no longer answered with an empty result. See [`docs/peer-address-caching.md`](https://github.com/ipfs/someguy/blob/main/docs/peer-address-caching.md).
-- A completed identify now prunes a peer's cached addresses down to its current advertised set (signed peer record or identify listen addresses) plus any live-connection address, instead of unioning forever. This stops stale certhashes, dead relay circuits, and rotated NAT ports from accumulating across provider lookups and gossip.
-- Multiaddrs in `/routing/v1` responses are returned in a stable sorted order. They previously came back in nondeterministic order, so repeated requests for the same peer or provider returned the same addresses shuffled differently.
+- `/routing/v1/ipns/{name}` no longer gives a cache a freshness window that outlives the record. It caps `max-age` to the record's remaining validity and sizes the `stale-while-revalidate`/`stale-if-error` window to fit within its EOL. An expired record, or one without an EOL validity, returns `Cache-Control: no-store`. [#155](https://github.com/ipfs/someguy/pull/155)
+- `/routing/v1/peers/{peerid}` now serves addresses cache-first, the same way `/routing/v1/providers/{cid}` does. It answers from the cached address book and host peerstore before falling back to a DHT lookup, so a relay-dependent peer that is absent from peer routing but recently seen as a provider is no longer answered with an empty result. See [`docs/peer-address-caching.md`](https://github.com/ipfs/someguy/blob/main/docs/peer-address-caching.md). [#153](https://github.com/ipfs/someguy/pull/153)
+- A completed identify now prunes a peer's cached addresses down to its current advertised set (signed peer record or identify listen addresses) plus any live-connection address, instead of unioning forever. This stops stale certhashes, dead relay circuits, and rotated NAT ports from accumulating across provider lookups and gossip. [#153](https://github.com/ipfs/someguy/pull/153)
+- Multiaddrs in `/routing/v1` responses are returned in a stable sorted order. They previously came back in nondeterministic order, so repeated requests for the same peer or provider returned the same addresses shuffled differently. [#153](https://github.com/ipfs/someguy/pull/153)
 
 ### Security
+
+- The OpenTelemetry OTLP HTTP exporter now caps response bodies at 4 MiB, so a hostile or man-in-the-middle collector cannot exhaust someguy's memory ([CVE-2026-39882](https://github.com/open-telemetry/opentelemetry-go/security/advisories/GHSA-w8rr-5gcm-pp58)). The gRPC exporter was never affected. [#155](https://github.com/ipfs/someguy/pull/155)
 
 ## [v0.13.0] - 2026-05-26
 
