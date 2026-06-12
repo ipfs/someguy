@@ -7,7 +7,7 @@ require (
 	github.com/CAFxX/httpcompression v0.0.9
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/dustin/go-humanize v1.0.1
-	github.com/felixge/httpsnoop v1.0.4
+	github.com/felixge/httpsnoop v1.1.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/ipfs/boxo v0.41.0
 	github.com/ipfs/go-cid v0.6.1
