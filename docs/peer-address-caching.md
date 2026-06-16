@@ -28,7 +28,7 @@ path (`cachedAddrBook.GetCachedAddrs`):
 
 | Store | Lifetime | Filled by |
 | --- | --- | --- |
-| **Cached address book** (`cachedAddrBook`) | 48h (`DefaultProvideValidity`), or permanent while connected | identify events, the probe loop, and addresses observed in provider records |
+| **Cached address book** (`cachedAddrBook`) | 48h (`DefaultProvideValidity`) for direct addresses, a shorter `DefaultRelayAddrTTL` for `/p2p-circuit` relay addresses, or permanent while connected | identify events, the probe loop, and addresses observed in provider records |
 | **Host peerstore** (`host.Peerstore()`) | 2 minutes (`TempAddrTTL`) | the DHT, which records provider and peer addresses during its own lookups |
 
 The cached address book is the durable, probed store. The host peerstore is a
@@ -82,6 +82,26 @@ peer record when present and otherwise from the identify listen addresses, kept
 together with any live-connection address so an active session is never dropped.
 A reachable peer therefore collapses back to its current advertised set on each
 refresh instead of growing without bound.
+
+## Relay addresses
+
+A `/p2p-circuit` (relay) address is far more perishable than a direct one. A
+relay grants a reservation for at most its reservation TTL
+(`relay.DefaultResources().ReservationTTL`, one hour by default) and drops it the
+moment the peer disconnects from the relay, so a relay address can die within
+minutes of being learned. A NAT'd node also advertises many at once: it reserves
+on a couple of relays, and each relay is reachable over several transports, so
+one peer often lists a dozen or more relay addresses.
+
+someguy handles these addresses on their own terms:
+
+- **Shorter TTL.** Relay addresses are cached under `DefaultRelayAddrTTL` (twice
+  the relay reservation TTL) rather than the 48h used for direct addresses. The
+  probe loop renews this for peers that are still reachable, so live relay-only
+  peers stay cached while dead relays age out within hours.
+- **Listed last.** `/providers` and `/peers` return direct addresses before
+  relay addresses, so a client dials a directly reachable address first and
+  falls back to a relay only when it must.
 
 ## How each endpoint reads the cache
 

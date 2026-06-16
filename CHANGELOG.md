@@ -21,6 +21,9 @@ The following emojis are used to highlight certain changes:
 
 ### Fixed
 
+- someguy now expires `/p2p-circuit` (relay) addresses from its cache much sooner than direct ones. A relay reservation is short-lived: it lasts at most an hour and is dropped the moment the peer disconnects from the relay, so a relay address kept for the usual 48 hours is often long dead by the time a client dials it. Relay addresses now use a shorter TTL (twice the relay reservation TTL by default) and are renewed only while the peer stays reachable, so working relay paths survive and dead ones age out within hours instead of days. See [`docs/peer-address-caching.md`](https://github.com/ipfs/someguy/blob/main/docs/peer-address-caching.md).
+- `/routing/v1` responses now list direct addresses before `/p2p-circuit` (relay) addresses. A client that dials addresses in order reaches a directly dialable one first and only falls back to a relay, which is slower and exists mainly to bootstrap a direct connection.
+
 ### Security
 
 ## [v0.14.0] - 2026-06-08
