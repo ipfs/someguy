@@ -810,3 +810,28 @@ func TestFilterPrivateMultiaddrSortsAndFilters(t *testing.T) {
 		}
 	}
 }
+
+func TestFilterPrivateMultiaddrPlacesRelayAddrsLast(t *testing.T) {
+	mustAddr := func(s string) types.Multiaddr {
+		m, err := multiaddr.NewMultiaddr(s)
+		require.NoError(t, err)
+		return types.Multiaddr{Multiaddr: m}
+	}
+
+	relay := "/p2p/12D3KooWCZ67sU8oCvKd82Y6c9NgpqgoZYuZEUcg4upHCjK3n1aj/p2p-circuit"
+	input := []types.Multiaddr{
+		mustAddr("/ip4/9.9.9.9/udp/4001/quic-v1" + relay),
+		mustAddr("/ip4/1.1.1.1/tcp/4001"),
+		mustAddr("/ip4/5.5.5.5/tcp/4001" + relay),
+		mustAddr("/ip4/2.2.2.2/udp/4001/quic-v1"),
+	}
+
+	out := filterPrivateMultiaddr(input)
+	require.Len(t, out, 4)
+
+	// Direct addresses come first, relay (/p2p-circuit) addresses last.
+	require.False(t, isRelayAddr(out[0].Multiaddr))
+	require.False(t, isRelayAddr(out[1].Multiaddr))
+	require.True(t, isRelayAddr(out[2].Multiaddr))
+	require.True(t, isRelayAddr(out[3].Multiaddr))
+}

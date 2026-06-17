@@ -59,6 +59,18 @@ const (
 	probeResultOffline = "offline"
 )
 
+// DefaultRelayAddrTTL bounds how long someguy serves a cached /p2p-circuit
+// (relay) address. A relay reservation lasts at most the relay's reservation
+// TTL (relay.DefaultResources().ReservationTTL) and is dropped the instant the
+// reserving peer disconnects from the relay, so a relay address is far more
+// perishable than a direct one. Caching it for the full
+// DefaultRecentlyConnectedAddrTTL would keep handing clients relay paths that
+// died hours ago. The probe loop re-extends this TTL for peers that are still
+// reachable, so live relay-only peers survive while dead relays age out
+// quickly. It is set to twice the reservation TTL so the probe loop has room to
+// re-confirm a live peer before its entry expires.
+var DefaultRelayAddrTTL = 2 * relay.DefaultResources().ReservationTTL
+
 var (
 	probeDurationHistogram = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:      "probe_duration_seconds",
@@ -100,6 +112,7 @@ type cachedAddrBook struct {
 	isProbing            atomic.Bool
 	allowPrivateIPs      bool // for testing
 	recentlyConnectedTTL time.Duration
+	relayAddrTTL         time.Duration
 }
 
 type AddrBookOption func(*cachedAddrBook) error
@@ -130,6 +143,15 @@ func WithRecentlyConnectedTTL(ttl time.Duration) AddrBookOption {
 	}
 }
 
+// WithRelayAddrTTL overrides the TTL used for /p2p-circuit (relay) addresses.
+// See DefaultRelayAddrTTL for why these are kept shorter than direct addresses.
+func WithRelayAddrTTL(ttl time.Duration) AddrBookOption {
+	return func(cab *cachedAddrBook) error {
+		cab.relayAddrTTL = ttl
+		return nil
+	}
+}
+
 func WithActiveProbing(enabled bool) AddrBookOption {
 	return func(cab *cachedAddrBook) error {
 		cab.probingEnabled = enabled
@@ -147,6 +169,7 @@ func newCachedAddrBook(opts ...AddrBookOption) (*cachedAddrBook, error) {
 		peerCache:            peerCache,
 		addrBook:             pstoremem.NewAddrBook(),
 		recentlyConnectedTTL: DefaultRecentlyConnectedAddrTTL, // Set default value
+		relayAddrTTL:         DefaultRelayAddrTTL,             // Set default value
 	}
 
 	for _, opt := range opts {
@@ -156,6 +179,7 @@ func newCachedAddrBook(opts ...AddrBookOption) (*cachedAddrBook, error) {
 		}
 	}
 	logger.Infof("Using TTL of %s for recently connected peers", cab.recentlyConnectedTTL)
+	logger.Infof("Using TTL of %s for relay (/p2p-circuit) addresses", cab.relayAddrTTL)
 	logger.Infof("Probing enabled: %t", cab.probingEnabled)
 	return cab, nil
 }
@@ -218,9 +242,12 @@ func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {
 				}
 				cab.replacePeerAddrs(ev.Peer, ev.SignedPeerRecord, ev.ListenAddrs, connAddrs, ttl)
 			case event.EvtPeerConnectednessChanged:
-				// If the peer is not connected or limited, we update the TTL
+				// On disconnect, move the peer's addresses off the connected TTL,
+				// then cap its relay addresses so a now-idle relay path is not
+				// served for the full recentlyConnectedTTL.
 				if !hasValidConnectedness(ev.Connectedness) {
 					cab.addrBook.UpdateAddrs(ev.Peer, ConnectedAddrTTL, cab.recentlyConnectedTTL)
+					cab.capRelayAddrTTL(ev.Peer)
 				}
 			}
 		case <-probeTicker.C:
@@ -277,6 +304,12 @@ func (cab *cachedAddrBook) replacePeerAddrs(p peer.ID, signed *record.Envelope, 
 		// zero addresses.
 		cab.addrBook.AddAddrs(p, listenAddrs, ttl)
 	}
+
+	// Cap relay (/p2p-circuit) addresses at the shorter relayAddrTTL. The
+	// advertised set is freshly verified, but a relay reservation can lapse long
+	// before ttl, so a relay path should not inherit the full TTL. Run this
+	// before re-adding connAddrs so a live relay session keeps the connected TTL.
+	cab.capRelayAddrTTL(p)
 
 	// Preserve live-connection addresses at the connected TTL even when absent
 	// from the advertised set, so an active session is never dropped.
@@ -372,8 +405,9 @@ func (cab *cachedAddrBook) GetCachedAddrs(p peer.ID) []types.Multiaddr {
 // connection (e.g. embedded in a provider record returned by FindProviders) so
 // that later peer-routing lookups can serve them from the same peerbook.
 // Private addresses are dropped unless explicitly allowed. These addresses are
-// unverified, so they are stored with the recently-connected TTL and will be
-// confirmed or evicted by the probe loop.
+// unverified, so direct addresses are stored with the recently-connected TTL
+// and relay (/p2p-circuit) addresses with the shorter relayAddrTTL; the probe
+// loop confirms or evicts them.
 func (cab *cachedAddrBook) CacheAddrs(p peer.ID, addrs []types.Multiaddr) {
 	if len(addrs) == 0 {
 		return
@@ -391,7 +425,13 @@ func (cab *cachedAddrBook) CacheAddrs(p peer.ID, addrs []types.Multiaddr) {
 		return
 	}
 
-	cab.addrBook.AddAddrs(p, maddrs, cab.recentlyConnectedTTL)
+	// Relay (/p2p-circuit) addresses are far more perishable than direct ones,
+	// so cache them under the shorter relayAddrTTL. AddAddrs only ever extends a
+	// TTL, so adding the relay set here never shortens one already held by a live
+	// connection.
+	direct, relayAddrs := splitRelayAddrs(maddrs)
+	cab.addrBook.AddAddrs(p, direct, cab.recentlyConnectedTTL)
+	cab.addrBook.AddAddrs(p, relayAddrs, cab.relayAddrTTL)
 }
 
 // Update the peer cache with information about a failed connection
@@ -448,4 +488,33 @@ func (cab *cachedAddrBook) getTTL(connectedness network.Connectedness) time.Dura
 		return ConnectedAddrTTL
 	}
 	return cab.recentlyConnectedTTL
+}
+
+// isRelayAddr reports whether a is a circuit-relay (/p2p-circuit) address.
+func isRelayAddr(a ma.Multiaddr) bool {
+	_, err := a.ValueForProtocol(ma.P_CIRCUIT)
+	return err == nil
+}
+
+// splitRelayAddrs partitions addrs into direct addresses and circuit-relay
+// (/p2p-circuit) addresses, preserving order within each group.
+func splitRelayAddrs(addrs []ma.Multiaddr) (direct, relay []ma.Multiaddr) {
+	for _, a := range addrs {
+		if isRelayAddr(a) {
+			relay = append(relay, a)
+		} else {
+			direct = append(direct, a)
+		}
+	}
+	return direct, relay
+}
+
+// capRelayAddrTTL lowers the TTL of p's stored relay (/p2p-circuit) addresses to
+// relayAddrTTL. It uses SetAddrs, which sets an exact TTL and so, unlike
+// AddAddrs, can shorten an entry; a caller that must keep a live relay session
+// re-adds it at the connected TTL afterward.
+func (cab *cachedAddrBook) capRelayAddrTTL(p peer.ID) {
+	if _, relayAddrs := splitRelayAddrs(cab.addrBook.Addrs(p)); len(relayAddrs) > 0 {
+		cab.addrBook.SetAddrs(p, relayAddrs, cab.relayAddrTTL)
+	}
 }

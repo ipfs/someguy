@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"testing"
+	"testing/synctest"
 	"time"
 
+	"github.com/ipfs/boxo/routing/http/types"
 	"github.com/libp2p/go-libp2p/core/event"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -133,6 +136,74 @@ func TestReplacePeerAddrsEmptyInputKeepsExistingAddrs(t *testing.T) {
 		got = append(got, a.String())
 	}
 	require.Equal(t, []string{"/ip4/1.1.1.1/tcp/4001"}, got)
+}
+
+func TestSplitRelayAddrs(t *testing.T) {
+	direct1 := ma.StringCast("/ip4/1.2.3.4/tcp/4001")
+	direct2 := ma.StringCast("/ip4/1.2.3.4/udp/4001/quic-v1")
+	relay1 := ma.StringCast("/ip4/5.6.7.8/tcp/4001/p2p/12D3KooWCZ67sU8oCvKd82Y6c9NgpqgoZYuZEUcg4upHCjK3n1aj/p2p-circuit")
+	relay2 := ma.StringCast("/dns4/relay.example/tcp/443/wss/p2p/12D3KooWCZ67sU8oCvKd82Y6c9NgpqgoZYuZEUcg4upHCjK3n1aj/p2p-circuit")
+
+	direct, relay := splitRelayAddrs([]ma.Multiaddr{direct1, relay1, direct2, relay2})
+	require.Equal(t, []ma.Multiaddr{direct1, direct2}, direct)
+	require.Equal(t, []ma.Multiaddr{relay1, relay2}, relay)
+
+	require.False(t, isRelayAddr(direct1))
+	require.True(t, isRelayAddr(relay1))
+}
+
+// relayTTLPeer and the addrs reused by the TTL tests below.
+var (
+	ttlTestPeer       = peer.ID("test-peer")
+	ttlTestDirectAddr = ma.StringCast("/ip4/3.3.3.3/tcp/4001")
+	ttlTestRelayAddr  = ma.StringCast("/ip4/5.6.7.8/udp/4001/quic-v1/p2p/12D3KooWCZ67sU8oCvKd82Y6c9NgpqgoZYuZEUcg4upHCjK3n1aj/p2p-circuit")
+)
+
+func TestCacheAddrsUsesShorterRelayTTL(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		cab, err := newCachedAddrBook(
+			WithAllowPrivateIPs(),
+			WithRecentlyConnectedTTL(48*time.Hour),
+			WithRelayAddrTTL(2*time.Hour),
+		)
+		require.NoError(t, err)
+		defer cab.addrBook.(io.Closer).Close()
+
+		cab.CacheAddrs(ttlTestPeer, []types.Multiaddr{
+			{Multiaddr: ttlTestDirectAddr},
+			{Multiaddr: ttlTestRelayAddr},
+		})
+		require.Len(t, cab.addrBook.Addrs(ttlTestPeer), 2)
+
+		// Past the relay TTL but well within the direct TTL: the relay address
+		// has aged out and only the direct address remains.
+		time.Sleep(3 * time.Hour)
+		got := cab.addrBook.Addrs(ttlTestPeer)
+		require.Len(t, got, 1)
+		require.Equal(t, ttlTestDirectAddr.String(), got[0].String())
+	})
+}
+
+func TestReplacePeerAddrsCapsRelayTTL(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		cab, err := newCachedAddrBook(
+			WithAllowPrivateIPs(),
+			WithRecentlyConnectedTTL(48*time.Hour),
+			WithRelayAddrTTL(2*time.Hour),
+		)
+		require.NoError(t, err)
+		defer cab.addrBook.(io.Closer).Close()
+
+		// A completed identify (no signed record) reports a direct and a relay
+		// address at the 48h ttl; the relay address must be capped to 2h.
+		cab.replacePeerAddrs(ttlTestPeer, nil, []ma.Multiaddr{ttlTestDirectAddr, ttlTestRelayAddr}, nil, 48*time.Hour)
+		require.Len(t, cab.addrBook.Addrs(ttlTestPeer), 2)
+
+		time.Sleep(3 * time.Hour)
+		got := cab.addrBook.Addrs(ttlTestPeer)
+		require.Len(t, got, 1)
+		require.Equal(t, ttlTestDirectAddr.String(), got[0].String())
+	})
 }
 
 func TestBackground(t *testing.T) {

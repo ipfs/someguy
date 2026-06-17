@@ -645,10 +645,19 @@ func filterPrivateMultiaddr(a []types.Multiaddr) []types.Multiaddr {
 		b = append(b, addr)
 	}
 
-	// Sort for a stable response across requests. Addresses can arrive in
-	// nondeterministic order (e.g. the peerstore stores them in a map), and
-	// this runs on every record from every router, so all sources are covered.
+	// Sort for a stable response across requests, and place relay
+	// (/p2p-circuit) addresses last so a client tries direct, dialable addresses
+	// first and only falls back to a relay. Addresses can arrive in
+	// nondeterministic order (e.g. the peerstore stores them in a map), and this
+	// runs on every record from every router, so all sources are covered.
 	slices.SortFunc(b, func(x, y types.Multiaddr) int {
+		xRelay, yRelay := isRelayAddr(x.Multiaddr), isRelayAddr(y.Multiaddr)
+		if xRelay != yRelay {
+			if xRelay {
+				return 1
+			}
+			return -1
+		}
 		return bytes.Compare(x.Multiaddr.Bytes(), y.Multiaddr.Bytes())
 	})
 
