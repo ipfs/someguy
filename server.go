@@ -36,6 +36,14 @@ import (
 
 var logger = logging.Logger(name)
 
+// RoutingTimeout bounds how long a /routing/v1 request may spend in the
+// routers. It must stay below the timeout clients put on the whole request,
+// otherwise a client gives up before someguy finishes and flushes, and the
+// records someguy did resolve are lost. The reference client, Helia's
+// delegated routing v1 client, aborts at 30s, and its clock starts before
+// ours, so the gap here also has to cover the request's network latency.
+const RoutingTimeout = 25 * time.Second
+
 func init() {
 	// Set go-log's slog handler as the application-wide default.
 	// This ensures all slog-based logging uses go-log's formatting.
@@ -65,6 +73,20 @@ func init() {
 	}
 	view.RegisterExporter(pe)
 	view.SetReportingPeriod(2 * time.Second)
+}
+
+// newCompressionAdapter builds the response compression middleware.
+//
+// MinSize(0) is load-bearing, not a tuning knob. The middleware defers the
+// compress-or-not decision until it has buffered MinSize bytes, and until it
+// decides, Flush is a no-op. NDJSON records are routinely smaller than the
+// default 200 bytes, so a record that is ready to send sits in that buffer
+// until a later record fills it or the handler returns. That turns
+// /routing/v1 streaming into a single batch delivered at the end, which is
+// exactly what a client waiting on early results cannot use. Compressing
+// from the first byte keeps the flush after every record meaningful.
+func newCompressionAdapter() (func(http.Handler) http.Handler, error) {
+	return httpcompression.DefaultAdapter(httpcompression.MinSize(0))
 }
 
 func withRequestLogger(next http.Handler) http.Handler {
@@ -242,6 +264,7 @@ func start(ctx context.Context, cfg *config) error {
 		server.WithPrometheusRegistry(prometheus.DefaultRegisterer),
 		server.WithRecordsLimit(cfg.recordsLimit),
 		server.WithStreamingRecordsLimit(cfg.streamingRecordsLimit),
+		server.WithRoutingTimeout(RoutingTimeout),
 	}
 
 	handler := server.Handler(&composableRouter{
@@ -259,7 +282,7 @@ func start(ctx context.Context, cfg *config) error {
 	}).Handler(handler)
 
 	// Add compression.
-	compress, err := httpcompression.DefaultAdapter()
+	compress, err := newCompressionAdapter()
 	if err != nil {
 		return err
 	}
