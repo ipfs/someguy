@@ -26,8 +26,8 @@ const (
 	mediaTypeJSON   = "application/json"
 	mediaTypeNDJSON = "application/x-ndjson"
 
-	cacheControlShortTTL = "public, max-age=15, stale-while-revalidate=172800, stale-if-error=172800"
-	cacheControlLongTTL  = "public, max-age=300, stale-while-revalidate=172800, stale-if-error=172800"
+	cacheControlShortTTL = "public, max-age=15, stale-while-revalidate=60, stale-if-error=3600"
+	cacheControlLongTTL  = "public, max-age=300, stale-while-revalidate=600, stale-if-error=172800"
 )
 
 func makeEd25519PeerID(t *testing.T) (crypto.PrivKey, peer.ID) {

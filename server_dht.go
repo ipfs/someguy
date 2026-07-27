@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 
 	"github.com/ipfs/boxo/ipns"
 	"github.com/ipfs/go-cid"
@@ -18,8 +19,8 @@ type bundledDHT struct {
 	fullRT   *fullrt.FullRT
 }
 
-func newBundledDHT(ctx context.Context, h host.Host, bootstrapAddrInfos []peer.AddrInfo) (routing.Routing, error) {
-	standardDHT, err := dht.New(ctx, h, dht.Mode(dht.ModeClient), dht.BootstrapPeers(bootstrapAddrInfos...))
+func newBundledDHT(h host.Host, bootstrapAddrInfos []peer.AddrInfo) (routing.Routing, error) {
+	standardDHT, err := dht.New(h, dht.Mode(dht.ModeClient), dht.BootstrapPeers(bootstrapAddrInfos...))
 	if err != nil {
 		return nil, err
 	}
@@ -42,6 +43,14 @@ func newBundledDHT(ctx context.Context, h host.Host, bootstrapAddrInfos []peer.A
 		standard: standardDHT,
 		fullRT:   fullRT,
 	}, nil
+}
+
+// Close stops both DHT clients. Since go-libp2p-kad-dht v0.42.0 the
+// constructors no longer take a context, so cancelling the context that built
+// them no longer shuts them down and Close is the only way to stop their
+// long-lived goroutines.
+func (b *bundledDHT) Close() error {
+	return errors.Join(b.fullRT.Close(), b.standard.Close())
 }
 
 func (b *bundledDHT) getDHT() routing.Routing {
