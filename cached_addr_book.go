@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -41,6 +42,21 @@ const (
 
 	// How many concurrent probes to run at once
 	MaxConcurrentProbes = 20
+
+	// DefaultMaxConcurrentFindPeers caps the background FindPeer lookups
+	// dispatched for provider records that arrive without addresses.
+	//
+	// These run detached from the request that triggered them, so a client can
+	// close its connection and leave the work behind: a cheap request in, a
+	// full DHT walk out. This is a circuit breaker for that asymmetry, not a
+	// throttle, and is sized so normal traffic never reaches it. Measured on
+	// delegated-ipfs.dev, an instance dispatches around 0.3-0.5 lookups per
+	// second, and each is bounded by DispatchedFindPeersTimeout, which puts
+	// steady state near 20 concurrent lookups even if every one runs to its
+	// timeout. The cap leaves well over an order of magnitude of headroom
+	// above that, while bounding the pathological case that would otherwise
+	// grow until the process runs out of memory.
+	DefaultMaxConcurrentFindPeers = 512
 
 	// How long to wait for a connect in a probe to complete.
 	// The worst case is a peer behind a relay, so we use the relay connect timeout.
@@ -113,6 +129,10 @@ type cachedAddrBook struct {
 	allowPrivateIPs      bool // for testing
 	recentlyConnectedTTL time.Duration
 	relayAddrTTL         time.Duration
+
+	// findPeerSlots bounds concurrent background FindPeer lookups. A slot is
+	// held for the lifetime of one lookup. See DefaultMaxConcurrentFindPeers.
+	findPeerSlots chan struct{}
 }
 
 type AddrBookOption func(*cachedAddrBook) error
@@ -159,6 +179,18 @@ func WithActiveProbing(enabled bool) AddrBookOption {
 	}
 }
 
+// WithMaxConcurrentFindPeers overrides how many background FindPeer lookups may
+// run at once. See DefaultMaxConcurrentFindPeers for how the default is sized.
+func WithMaxConcurrentFindPeers(n int) AddrBookOption {
+	return func(cab *cachedAddrBook) error {
+		if n < 1 {
+			return fmt.Errorf("max concurrent find peers must be at least 1, got %d", n)
+		}
+		cab.findPeerSlots = make(chan struct{}, n)
+		return nil
+	}
+}
+
 func newCachedAddrBook(opts ...AddrBookOption) (*cachedAddrBook, error) {
 	peerCache, err := lru.New[peer.ID, peerState](PeerCacheSize)
 	if err != nil {
@@ -168,8 +200,9 @@ func newCachedAddrBook(opts ...AddrBookOption) (*cachedAddrBook, error) {
 	cab := &cachedAddrBook{
 		peerCache:            peerCache,
 		addrBook:             pstoremem.NewAddrBook(),
-		recentlyConnectedTTL: DefaultRecentlyConnectedAddrTTL, // Set default value
-		relayAddrTTL:         DefaultRelayAddrTTL,             // Set default value
+		recentlyConnectedTTL: DefaultRecentlyConnectedAddrTTL,                    // Set default value
+		relayAddrTTL:         DefaultRelayAddrTTL,                                // Set default value
+		findPeerSlots:        make(chan struct{}, DefaultMaxConcurrentFindPeers), // Set default value
 	}
 
 	for _, opt := range opts {
@@ -182,6 +215,28 @@ func newCachedAddrBook(opts ...AddrBookOption) (*cachedAddrBook, error) {
 	logger.Infof("Using TTL of %s for relay (/p2p-circuit) addresses", cab.relayAddrTTL)
 	logger.Infof("Probing enabled: %t", cab.probingEnabled)
 	return cab, nil
+}
+
+// tryAcquireFindPeerSlot reserves capacity for one background FindPeer.
+// It never blocks: at capacity it reports false and the caller skips the
+// lookup, the same outcome as a peer that ShouldProbePeer declines. Blocking
+// instead would only convert an unbounded goroutine count into an unbounded
+// queue of work nobody is waiting for any more.
+// Every successful call must be paired with releaseFindPeerSlot.
+func (cab *cachedAddrBook) tryAcquireFindPeerSlot() bool {
+	select {
+	case cab.findPeerSlots <- struct{}{}:
+		findPeerLookupsInFlight.Inc()
+		return true
+	default:
+		findPeerLookupsRejected.Inc()
+		return false
+	}
+}
+
+func (cab *cachedAddrBook) releaseFindPeerSlot() {
+	<-cab.findPeerSlots
+	findPeerLookupsInFlight.Dec()
 }
 
 func (cab *cachedAddrBook) background(ctx context.Context, host host.Host) {

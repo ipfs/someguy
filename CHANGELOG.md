@@ -19,6 +19,10 @@ The following emojis are used to highlight certain changes:
 
 ### Removed
 
+### Added
+
+- Background `FindPeer` lookups, the ones someguy dispatches for provider records that arrive without addresses, are now capped at 512 concurrent per instance. These lookups outlive the request that triggered them, so a client could close its connection and leave a full DHT walk running, with nothing bounding how many piled up. Measured on `delegated-ipfs.dev` an instance runs on the order of 20 at once, so the cap only engages far outside normal traffic. Three metrics were added to watch it: `someguy_cached_router_find_peer_lookups_in_flight`, `someguy_cached_router_find_peer_lookups_rejected`, and `someguy_cached_router_find_peer_lookup_duration_seconds`. [#169](https://github.com/ipfs/someguy/pull/169)
+
 ### Fixed
 
 - `Accept: application/x-ndjson` responses now reach the client as each record is produced, instead of arriving in one batch at the end. Response compression was holding writes back until 200 bytes had accumulated, and a provider record is often smaller than that, so a provider someguy had already resolved sat in a buffer while it looked up the rest. Clients that give up before someguy finishes, such as Helia's delegated routing client with its 30s deadline, saw an empty result even though providers had been found. Response headers were withheld the same way, so the request appeared to hang. [#169](https://github.com/ipfs/someguy/pull/169)

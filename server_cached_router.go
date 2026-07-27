@@ -28,6 +28,38 @@ var (
 		[]string{addrCacheStateLabel, addrQueryOriginLabel},
 	)
 
+	// findPeerLookupsInFlight shows how close the background lookups run to
+	// their cap. It is the signal for whether DefaultMaxConcurrentFindPeers is
+	// sized right: steady state well under the cap means normal traffic never
+	// reaches it.
+	findPeerLookupsInFlight = promauto.NewGauge(prometheus.GaugeOpts{
+		Name:      "find_peer_lookups_in_flight",
+		Subsystem: "cached_router",
+		Namespace: name,
+		Help:      "Number of background FindPeer lookups currently running",
+	})
+
+	// findPeerLookupsRejected counts lookups skipped because the cap was
+	// reached. Any sustained increase means providers are being dropped that
+	// someguy would otherwise have resolved, so the cap needs raising or the
+	// traffic needs a closer look.
+	findPeerLookupsRejected = promauto.NewCounter(prometheus.CounterOpts{
+		Name:      "find_peer_lookups_rejected",
+		Subsystem: "cached_router",
+		Namespace: name,
+		Help:      "Number of background FindPeer lookups skipped because the concurrency cap was reached",
+	})
+
+	// findPeerLookupDuration measures how long a dispatched lookup occupies its
+	// slot, which is what turns the dispatch rate into a concurrency figure.
+	findPeerLookupDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:      "find_peer_lookup_duration_seconds",
+		Subsystem: "cached_router",
+		Namespace: name,
+		Help:      "Duration of background FindPeer lookups in seconds",
+		Buckets:   []float64{0.5, 1, 2, 5, 10, 20, 30, 45, 60},
+	})
+
 	errNoValueAvailable = errors.New("no value available")
 )
 
@@ -226,7 +258,11 @@ func (it *cacheFallbackIter) Next() bool {
 					}
 
 					logger.Infow("no cached addresses found in cacheFallbackIter, dispatching find peers", "peer", record.ID)
-					if it.router.cachedAddrBook.ShouldProbePeer(*record.ID) {
+					// Reserve the slot before counting the lookup: ongoingLookups
+					// is what Next waits on below, so incrementing it for a
+					// lookup that never starts would stall this iterator until
+					// the request times out.
+					if it.router.cachedAddrBook.ShouldProbePeer(*record.ID) && it.router.cachedAddrBook.tryAcquireFindPeerSlot() {
 						it.ongoingLookups.Add(1) // important to increment before dispatchFindPeer
 						// If a record has no addrs, we dispatch a lookup to find addresses
 						go it.dispatchFindPeer(*record)
@@ -289,6 +325,8 @@ func (it *cacheFallbackIter) Close() error {
 
 func (it *cacheFallbackIter) dispatchFindPeer(record types.PeerRecord) {
 	defer it.ongoingLookups.Add(-1)
+	defer it.router.cachedAddrBook.releaseFindPeerSlot()
+	defer prometheus.NewTimer(findPeerLookupDuration).ObserveDuration()
 
 	// Create a new context with a timeout that is independent of the main request context
 	// This is important because finishing (and determining whether this peer is reachable) the
