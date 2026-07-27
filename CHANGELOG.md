@@ -15,6 +15,18 @@ The following emojis are used to highlight certain changes:
 
 ### Added
 
+### Changed
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [v0.15.0] - 2026-07-27
+
+### Added
+
 - Background `FindPeer` lookups, the ones someguy dispatches for provider records that arrive without addresses, are now capped at 512 concurrent per instance. These lookups outlive the request that triggered them, so a client could close its connection and leave a full DHT walk running, with nothing bounding how many piled up. Measured on `delegated-ipfs.dev` an instance runs on the order of 20 at once, so the cap only engages far outside normal traffic. Three metrics were added to watch it: `someguy_cached_router_find_peer_lookups_in_flight`, `someguy_cached_router_find_peer_lookups_rejected`, and `someguy_cached_router_find_peer_lookup_duration_seconds`. Tune with `SOMEGUY_CACHED_ADDR_BOOK_MAX_CONCURRENT_FIND_PEERS`. [#169](https://github.com/ipfs/someguy/pull/169)
 - `SOMEGUY_ROUTING_TIMEOUT` sets how long one `/routing/v1` request may spend in the routers, defaulting to 25s. It has to stay below the timeout clients put on the whole request, otherwise a client gives up before someguy flushes and every record someguy resolved is lost. [#169](https://github.com/ipfs/someguy/pull/169)
 
@@ -24,16 +36,17 @@ The following emojis are used to highlight certain changes:
 - someguy now shuts the DHT down explicitly. Its constructors stopped taking a context in [go-libp2p-kad-dht v0.42.0](https://github.com/libp2p/go-libp2p-kad-dht/releases/tag/v0.42.0), so cancelling the context that built them no longer stops their long-lived goroutines. `SIGTERM` now closes both the standard and accelerated clients before someguy exits. [#171](https://github.com/ipfs/someguy/pull/171)
 - `/routing/v1` responses no longer let a cache serve a two-day-old answer while someguy is healthy. `stale-while-revalidate` is now 10 minutes for responses with results and 1 minute for empty ones, which covers a background refresh. `stale-if-error` only applies when someguy is failing, so responses with results keep the 48h Amino DHT expiration window, and empty ones drop to 1 hour. `max-age` is unchanged. The addresses someguy returns come from short-lived sources such as relay reservations, so a stale window measured in days handed clients addresses that had stopped working long ago. [ipfs/boxo#1195](https://github.com/ipfs/boxo/pull/1195)
 
-### Removed
-
 ### Fixed
 
 - `Accept: application/x-ndjson` responses now reach the client as each record is produced, instead of arriving in one batch at the end. Response compression was holding writes back until 200 bytes had accumulated, and a provider record is often smaller than that, so a provider someguy had already resolved sat in a buffer while it looked up the rest. Clients that give up before someguy finishes, such as Helia's delegated routing client with its 30s deadline, saw an empty result even though providers had been found. Response headers were withheld the same way, so the request appeared to hang. [#169](https://github.com/ipfs/someguy/pull/169)
 - someguy now stops its routing lookups at 25s rather than 30s, so it finishes and flushes before clients that bound the whole request at 30s walk away. Results found near the deadline now reach the client instead of being discarded with the aborted request. [#169](https://github.com/ipfs/someguy/pull/169)
+
+## [v0.14.1] - 2026-07-14
+
+### Fixed
+
 - someguy now expires `/p2p-circuit` (relay) addresses from its cache much sooner than direct ones. A relay reservation is short-lived: it lasts at most an hour and is dropped the moment the peer disconnects from the relay, so a relay address kept for the usual 48 hours is often long dead by the time a client dials it. Relay addresses now use a shorter TTL (twice the relay reservation TTL by default) and are renewed only while the peer stays reachable, so working relay paths survive and dead ones age out within hours instead of days. See [`docs/peer-address-caching.md`](https://github.com/ipfs/someguy/blob/main/docs/peer-address-caching.md).
 - `/routing/v1` responses now list direct addresses before `/p2p-circuit` (relay) addresses. A client that dials addresses in order reaches a directly dialable one first and only falls back to a relay, which is slower and exists mainly to bootstrap a direct connection.
-
-### Security
 
 ## [v0.14.0] - 2026-06-08
 
