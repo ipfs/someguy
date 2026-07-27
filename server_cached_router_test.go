@@ -593,3 +593,89 @@ func TestCacheFallbackIter(t *testing.T) {
 	})
 
 }
+
+func TestFindPeerConcurrencyCap(t *testing.T) {
+	t.Parallel()
+
+	publicAddr := mustMultiaddr(t, "/ip4/137.21.14.12/tcp/4001")
+
+	t.Run("rejects dispatch once the cap is reached", func(t *testing.T) {
+		t.Parallel()
+
+		cab, err := newCachedAddrBook(WithMaxConcurrentFindPeers(2))
+		require.NoError(t, err)
+
+		require.True(t, cab.tryAcquireFindPeerSlot())
+		require.True(t, cab.tryAcquireFindPeerSlot())
+		require.False(t, cab.tryAcquireFindPeerSlot(), "third acquire must fail at a cap of 2")
+
+		cab.releaseFindPeerSlot()
+		require.True(t, cab.tryAcquireFindPeerSlot(), "a released slot must be reusable")
+	})
+
+	t.Run("invalid cap is rejected", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := newCachedAddrBook(WithMaxConcurrentFindPeers(0))
+		require.Error(t, err)
+	})
+
+	// The cap must not stall the iterator. ongoingLookups is what Next() waits
+	// on, so a skipped dispatch that still incremented it would block until the
+	// request context expired.
+	t.Run("exhausted cap does not stall the iterator", func(t *testing.T) {
+		t.Parallel()
+
+		pid := peer.ID("test-peer-capped")
+		sourceIter := newMockResultIter([]iter.Result[types.Record]{
+			{Val: &types.PeerRecord{Schema: "peer", ID: &pid, Addrs: nil}},
+		})
+
+		mr := &mockRouter{}
+		// No FindPeers expectation: reaching the router would fail the test.
+		cab, err := newCachedAddrBook(WithMaxConcurrentFindPeers(1))
+		require.NoError(t, err)
+		require.True(t, cab.tryAcquireFindPeerSlot(), "occupy the only slot")
+		cr := NewCachedRouter(mr, cab)
+
+		fallbackIter := NewCacheFallbackIter(sourceIter, cr, t.Context(), addrQueryOriginProviders)
+
+		done := make(chan struct{})
+		var results []types.Record
+		go func() {
+			defer close(done)
+			results, _ = iter.ReadAllResults(fallbackIter)
+		}()
+
+		select {
+		case <-done:
+			require.Empty(t, results, "the addr-less record has no addresses to return")
+		case <-time.After(5 * time.Second):
+			t.Fatal("iterator stalled after a dispatch was rejected: ongoingLookups was incremented for a lookup that never ran")
+		}
+		mr.AssertNotCalled(t, "FindPeers", mock.Anything, mock.Anything, mock.Anything)
+	})
+
+	t.Run("slot is released after the lookup finishes", func(t *testing.T) {
+		t.Parallel()
+
+		pid := peer.ID("test-peer-release")
+		sourceIter := newMockResultIter([]iter.Result[types.Record]{
+			{Val: &types.PeerRecord{Schema: "peer", ID: &pid, Addrs: nil}},
+			{Val: &types.PeerRecord{Schema: "peer", ID: &pid, Addrs: []types.Multiaddr{publicAddr}}},
+		})
+
+		mr := &mockRouter{}
+		mr.On("FindPeers", mock.Anything, pid, 1).Return(nil, routing.ErrNotFound)
+		cab, err := newCachedAddrBook(WithMaxConcurrentFindPeers(4))
+		require.NoError(t, err)
+		cr := NewCachedRouter(mr, cab)
+
+		fallbackIter := NewCacheFallbackIter(sourceIter, cr, t.Context(), addrQueryOriginProviders)
+		_, err = iter.ReadAllResults(fallbackIter)
+		require.NoError(t, err)
+
+		require.Eventually(t, func() bool { return len(cab.findPeerSlots) == 0 }, 5*time.Second, 10*time.Millisecond,
+			"every dispatched lookup must release its slot")
+	})
+}

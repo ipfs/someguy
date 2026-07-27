@@ -131,6 +131,15 @@ addresses, someguy consults the cache; on a miss it dispatches a background
 `FindPeer` so the stream keeps flowing. Records still missing addresses when the
 stream ends are dropped.
 
+A background `FindPeer` keeps running after the request that triggered it ends,
+because finishing it fills the cache for whoever asks next. That also means a
+client can disconnect and leave the work behind, so these lookups are capped at
+512 at a time per instance. At the cap the lookup is skipped and the record is
+dropped, the same as for a peer under connect-failure backoff. Normal traffic
+runs about 20 at once, well below the cap; watch
+`someguy_cached_router_find_peer_lookups_rejected` in
+[metrics.md](metrics.md) to confirm it stays that way.
+
 ### `/routing/v1/peers/{peerid}`
 
 ```mermaid
