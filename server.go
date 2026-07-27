@@ -78,14 +78,13 @@ func init() {
 
 // newCompressionAdapter builds the response compression middleware.
 //
-// MinSize(0) is load-bearing, not a tuning knob. The middleware defers the
-// compress-or-not decision until it has buffered MinSize bytes, and until it
-// decides, Flush is a no-op. NDJSON records are routinely smaller than the
-// default 200 bytes, so a record that is ready to send sits in that buffer
-// until a later record fills it or the handler returns. That turns
-// /routing/v1 streaming into a single batch delivered at the end, which is
-// exactly what a client waiting on early results cannot use. Compressing
-// from the first byte keeps the flush after every record meaningful.
+// Do not raise MinSize. The middleware defers the compress-or-not decision
+// until it has buffered MinSize bytes, and until it decides, Flush is a no-op.
+// NDJSON records are routinely smaller than the default 200 bytes, so a record
+// that is ready to send sits in that buffer until a later record fills it or
+// the handler returns. That turns /routing/v1 streaming into a single batch
+// delivered at the end, which a client waiting on early results cannot use.
+// Compressing from the first byte keeps the flush after every record working.
 func newCompressionAdapter() (func(http.Handler) http.Handler, error) {
 	return httpcompression.DefaultAdapter(httpcompression.MinSize(0))
 }

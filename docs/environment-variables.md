@@ -85,7 +85,7 @@ Default: `25s`
 
 ### `SOMEGUY_RECORDS_LIMIT`
 
-Maximum providers or peers returned per `Accept: application/json` request. [HTTP Routing v1 §4.1.5](https://specs.ipfs.tech/routing/http-routing-v1/) recommends `100`. Set to `0` to disable the cap.
+Maximum providers or peers returned per `Accept: application/json` request. [HTTP Routing v1, section 4.1.5](https://specs.ipfs.tech/routing/http-routing-v1/) recommends `100`. Set to `0` to disable the cap.
 
 Default: `100`
 

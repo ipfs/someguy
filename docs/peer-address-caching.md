@@ -133,12 +133,14 @@ stream ends are dropped.
 
 A background `FindPeer` keeps running after the request that triggered it ends,
 because finishing it fills the cache for whoever asks next. That also means a
-client can disconnect and leave the work behind, so these lookups are capped at
-512 at a time per instance. At the cap the lookup is skipped and the record is
-dropped, the same as for a peer under connect-failure backoff. Normal traffic
-runs about 20 at once, well below the cap; watch
-`someguy_cached_router_find_peer_lookups_rejected` in
-[metrics.md](metrics.md) to confirm it stays that way.
+client can disconnect and leave the work behind, so these lookups are capped
+per instance by
+[`SOMEGUY_CACHED_ADDR_BOOK_MAX_CONCURRENT_FIND_PEERS`](environment-variables.md#someguy_cached_addr_book_max_concurrent_find_peers).
+At the cap the lookup is skipped and the record is dropped, the same as for a
+peer under connect-failure backoff. The default sits more than an order of
+magnitude above what normal traffic uses, so it only engages far outside it.
+Watch `someguy_cached_router_find_peer_lookups_rejected` in
+[metrics.md](metrics.md) to confirm that stays true.
 
 ### `/routing/v1/peers/{peerid}`
 
@@ -168,3 +170,79 @@ addresses over such a window.
 
 Both endpoints follow this rule: they read the cache first and fall back to a
 DHT lookup only when the cache cannot answer.
+
+## Deliberate trade-offs
+
+Several things someguy does not do look like oversights. They are choices, and
+the reasoning behind them is not visible in the code.
+
+### Records without addresses are dropped, not returned as bare peer IDs
+
+A provider record whose address lookup fails is omitted from the response.
+someguy could return the peer ID alone and let the client resolve it, and the
+[spec has a way to ask for that](https://specs.ipfs.tech/routing/http-routing-v1/#filter-addrs-providers-request-query-parameter):
+`filter-addrs=unknown` means "keep providers whose multiaddrs are unknown".
+someguy does not honor it today, because the cache fallback drops those records
+before the filter layer ever sees them.
+
+The reason is what a client does next. Its only move is to call
+`/routing/v1/peers/{peerid}`, which reaches the same someguy that just failed
+to resolve that peer, and runs the same DHT walk. One response with a handful
+of address-less providers becomes a handful of peer lookups, each taking
+seconds.
+
+Which way that trade should go depends on the client. A browser page shares one
+connection pool across everything it loads, and a client that fans out on every
+record can saturate its own request budget and effectively DoS itself, while
+someguy pays for every walk anyway. Resolving once on the server and sharing
+the answer through the cache spends someguy's resources instead of the
+browser's, and someguy has more of them. See [who this is tuned
+for](response-streaming.md#who-this-is-tuned-for).
+
+Some of those peers are also withheld on purpose. A peer under connect-failure
+backoff never gets a lookup dispatched at all, so passing its ID to a client
+would send it after a peer someguy already knows is unreachable.
+
+If a client can run its own DHT queries and wants the raw IDs, wiring up
+`filter-addrs=unknown` is the supported path. It needs the filters to reach the
+router, which the boxo HTTP server does not pass through today.
+
+### A background lookup is not aborted when the client disconnects
+
+Closing the connection stops delivery, but the dispatched `FindPeer` keeps
+running on its own context for up to `DispatchedFindPeersTimeout`. Finishing
+the lookup fills the cache, so the next client asking for that peer gets an
+instant answer instead of paying for the same walk.
+
+The cost is that a cheap request can leave expensive work behind, which is what
+the concurrency cap above exists to bound. Without it, a client could open
+requests, close them immediately, and leave an unbounded pile of DHT walks
+running.
+
+### `/peers` is not capped the same way
+
+The cap covers background lookups only. A direct `/routing/v1/peers/{peerid}`
+request runs on the request context, so it stops when the client disconnects
+and cannot outlive the request. Its concurrency is bounded by how many requests
+are in flight.
+
+Skipping a lookup also means something different on each path. For a background
+lookup the record is quietly omitted, which the client cannot tell from a peer
+that had no addresses. For a direct request it would mean failing a request a
+client is actively waiting on. The direct path has a different weakness worth
+knowing: it consults no backoff, so a repeated request for an unresolvable peer
+pays a fresh DHT walk every time.
+
+### Nothing is persisted across restarts
+
+someguy passes no datastore to the DHT, so value records, including IPNS
+records written through `PUT /routing/v1/ipns/{name}`, live in memory and are
+lost on restart. The address cache is in memory too.
+
+Adding a persistent datastore is possible and small, but it buys little as
+deployed. A `PUT` lands on one instance behind the load balancer, and a later
+`GET` lands on any of them, so a per-instance store answers only a fraction of
+reads. What actually makes a record retrievable is the DHT publish that the
+`PUT` already performs. Persistence would need a datastore shared across
+instances, and keeping a record alive past its expiry would need a republish
+loop. Both are design work rather than configuration.
