@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -59,6 +60,20 @@ func main() {
 						Value:       DefaultRecentlyConnectedAddrTTL,
 						EnvVars:     []string{"SOMEGUY_CACHED_ADDR_BOOK_RECENT_TTL"},
 						Usage:       "TTL for recently connected peers' multiaddrs in the cached address book",
+					},
+					&cli.IntFlag{
+						Name:        "cached-addr-book-max-concurrent-find-peers",
+						DefaultText: strconv.Itoa(DefaultMaxConcurrentFindPeers),
+						Value:       DefaultMaxConcurrentFindPeers,
+						EnvVars:     []string{"SOMEGUY_CACHED_ADDR_BOOK_MAX_CONCURRENT_FIND_PEERS"},
+						Usage:       "maximum background FindPeer lookups running at once for provider records that arrive without addresses",
+					},
+					&cli.DurationFlag{
+						Name:        "routing-timeout",
+						DefaultText: DefaultRoutingTimeout.String(),
+						Value:       DefaultRoutingTimeout,
+						EnvVars:     []string{"SOMEGUY_ROUTING_TIMEOUT"},
+						Usage:       "maximum time spent in the routers per /routing/v1 request; keep it below the timeout clients apply to the whole request",
 					},
 					&cli.IntFlag{
 						Name:    "records-limit",
@@ -205,6 +220,8 @@ func main() {
 						cachedAddrBook:              ctx.Bool("cached-addr-book"),
 						cachedAddrBookActiveProbing: ctx.Bool("cached-addr-book-active-probing"),
 						cachedAddrBookRecentTTL:     ctx.Duration("cached-addr-book-recent-ttl"),
+						cachedAddrBookMaxFindPeers:  ctx.Int("cached-addr-book-max-concurrent-find-peers"),
+						routingTimeout:              ctx.Duration("routing-timeout"),
 						recordsLimit:                recordsLimit,
 						streamingRecordsLimit:       streamingRecordsLimit,
 

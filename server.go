@@ -36,13 +36,13 @@ import (
 
 var logger = logging.Logger(name)
 
-// RoutingTimeout bounds how long a /routing/v1 request may spend in the
+// DefaultRoutingTimeout bounds how long a /routing/v1 request may spend in the
 // routers. It must stay below the timeout clients put on the whole request,
 // otherwise a client gives up before someguy finishes and flushes, and the
 // records someguy did resolve are lost. The reference client, Helia's
 // delegated routing v1 client, aborts at 30s, and its clock starts before
 // ours, so the gap here also has to cover the request's network latency.
-const RoutingTimeout = 25 * time.Second
+const DefaultRoutingTimeout = 25 * time.Second
 
 func init() {
 	// Set go-log's slog handler as the application-wide default.
@@ -113,6 +113,8 @@ type config struct {
 	cachedAddrBook              bool
 	cachedAddrBookActiveProbing bool
 	cachedAddrBookRecentTTL     time.Duration
+	cachedAddrBookMaxFindPeers  int
+	routingTimeout              time.Duration
 	recordsLimit                int
 	streamingRecordsLimit       int
 
@@ -194,6 +196,10 @@ func start(ctx context.Context, cfg *config) error {
 			opts = append(opts, WithRecentlyConnectedTTL(cfg.cachedAddrBookRecentTTL))
 		}
 
+		if cfg.cachedAddrBookMaxFindPeers > 0 {
+			opts = append(opts, WithMaxConcurrentFindPeers(cfg.cachedAddrBookMaxFindPeers))
+		}
+
 		opts = append(opts, WithActiveProbing(cfg.cachedAddrBookActiveProbing))
 
 		// Let the cache fall back to the host peerstore, which the DHT
@@ -264,7 +270,14 @@ func start(ctx context.Context, cfg *config) error {
 		server.WithPrometheusRegistry(prometheus.DefaultRegisterer),
 		server.WithRecordsLimit(cfg.recordsLimit),
 		server.WithStreamingRecordsLimit(cfg.streamingRecordsLimit),
-		server.WithRoutingTimeout(RoutingTimeout),
+	}
+
+	// A zero timeout would cancel every request before it reached a router, so
+	// treat it as unset rather than passing it through.
+	if cfg.routingTimeout > 0 {
+		handlerOpts = append(handlerOpts, server.WithRoutingTimeout(cfg.routingTimeout))
+	} else {
+		handlerOpts = append(handlerOpts, server.WithRoutingTimeout(DefaultRoutingTimeout))
 	}
 
 	handler := server.Handler(&composableRouter{

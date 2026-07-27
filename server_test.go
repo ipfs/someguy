@@ -142,6 +142,6 @@ func TestRoutingTimeoutLeavesRoomForClientDeadline(t *testing.T) {
 	t.Parallel()
 
 	const heliaClientTimeout = 30 * time.Second
-	require.Less(t, RoutingTimeout, heliaClientTimeout)
-	require.Less(t, RoutingTimeout, server.DefaultRoutingTimeout)
+	require.Less(t, DefaultRoutingTimeout, heliaClientTimeout)
+	require.Less(t, DefaultRoutingTimeout, server.DefaultRoutingTimeout)
 }

@@ -21,7 +21,8 @@ The following emojis are used to highlight certain changes:
 
 ### Added
 
-- Background `FindPeer` lookups, the ones someguy dispatches for provider records that arrive without addresses, are now capped at 512 concurrent per instance. These lookups outlive the request that triggered them, so a client could close its connection and leave a full DHT walk running, with nothing bounding how many piled up. Measured on `delegated-ipfs.dev` an instance runs on the order of 20 at once, so the cap only engages far outside normal traffic. Three metrics were added to watch it: `someguy_cached_router_find_peer_lookups_in_flight`, `someguy_cached_router_find_peer_lookups_rejected`, and `someguy_cached_router_find_peer_lookup_duration_seconds`. [#169](https://github.com/ipfs/someguy/pull/169)
+- Background `FindPeer` lookups, the ones someguy dispatches for provider records that arrive without addresses, are now capped at 512 concurrent per instance. These lookups outlive the request that triggered them, so a client could close its connection and leave a full DHT walk running, with nothing bounding how many piled up. Measured on `delegated-ipfs.dev` an instance runs on the order of 20 at once, so the cap only engages far outside normal traffic. Three metrics were added to watch it: `someguy_cached_router_find_peer_lookups_in_flight`, `someguy_cached_router_find_peer_lookups_rejected`, and `someguy_cached_router_find_peer_lookup_duration_seconds`. Tune with `SOMEGUY_CACHED_ADDR_BOOK_MAX_CONCURRENT_FIND_PEERS`. [#169](https://github.com/ipfs/someguy/pull/169)
+- `SOMEGUY_ROUTING_TIMEOUT` sets how long one `/routing/v1` request may spend in the routers, defaulting to 25s. It has to stay below the timeout clients put on the whole request, otherwise a client gives up before someguy flushes and every record someguy resolved is lost. [#169](https://github.com/ipfs/someguy/pull/169)
 
 ### Fixed
 

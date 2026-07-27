@@ -8,6 +8,8 @@ The environment variables below override `someguy`'s built-in defaults.
   - [`SOMEGUY_CACHED_ADDR_BOOK`](#someguy_cached_addr_book)
   - [`SOMEGUY_CACHED_ADDR_BOOK_RECENT_TTL`](#someguy_cached_addr_book_recent_ttl)
   - [`SOMEGUY_CACHED_ADDR_BOOK_ACTIVE_PROBING`](#someguy_cached_addr_book_active_probing)
+  - [`SOMEGUY_CACHED_ADDR_BOOK_MAX_CONCURRENT_FIND_PEERS`](#someguy_cached_addr_book_max_concurrent_find_peers)
+  - [`SOMEGUY_ROUTING_TIMEOUT`](#someguy_routing_timeout)
   - [`SOMEGUY_RECORDS_LIMIT`](#someguy_records_limit)
   - [`SOMEGUY_STREAMING_RECORDS_LIMIT`](#someguy_streaming_records_limit)
   - [`SOMEGUY_PROVIDER_ENDPOINTS`](#someguy_provider_endpoints)
@@ -64,6 +66,22 @@ Default: `48h`
 Enables active probing of cached peers to keep their multiaddrs up to date. Applies only when `SOMEGUY_CACHED_ADDR_BOOK` is enabled.
 
 Default: `true`
+
+### `SOMEGUY_CACHED_ADDR_BOOK_MAX_CONCURRENT_FIND_PEERS`
+
+Maximum background `FindPeer` lookups that run at once. Someguy starts one of these when a provider record arrives without addresses and the cache has none. At the limit Someguy skips the lookup and omits the record. Applies only when `SOMEGUY_CACHED_ADDR_BOOK` is enabled.
+
+Raise this only if `someguy_cached_router_find_peer_lookups_rejected` keeps increasing. See [metrics.md](metrics.md) and [peer-address-caching.md](peer-address-caching.md).
+
+Default: `512`
+
+### `SOMEGUY_ROUTING_TIMEOUT`
+
+Maximum time one `/routing/v1` request spends in the routers.
+
+Keep this below the timeout the client applies to the whole request. A client that gives up first loses every record Someguy found, because the response is still open when the client disconnects. Helia's delegated routing client allows 30 seconds and starts its timer before Someguy starts this one.
+
+Default: `25s`
 
 ### `SOMEGUY_RECORDS_LIMIT`
 
