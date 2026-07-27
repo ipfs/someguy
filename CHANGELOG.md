@@ -15,14 +15,16 @@ The following emojis are used to highlight certain changes:
 
 ### Added
 
-### Changed
-
-### Removed
-
-### Added
-
 - Background `FindPeer` lookups, the ones someguy dispatches for provider records that arrive without addresses, are now capped at 512 concurrent per instance. These lookups outlive the request that triggered them, so a client could close its connection and leave a full DHT walk running, with nothing bounding how many piled up. Measured on `delegated-ipfs.dev` an instance runs on the order of 20 at once, so the cap only engages far outside normal traffic. Three metrics were added to watch it: `someguy_cached_router_find_peer_lookups_in_flight`, `someguy_cached_router_find_peer_lookups_rejected`, and `someguy_cached_router_find_peer_lookup_duration_seconds`. Tune with `SOMEGUY_CACHED_ADDR_BOOK_MAX_CONCURRENT_FIND_PEERS`. [#169](https://github.com/ipfs/someguy/pull/169)
 - `SOMEGUY_ROUTING_TIMEOUT` sets how long one `/routing/v1` request may spend in the routers, defaulting to 25s. It has to stay below the timeout clients put on the whole request, otherwise a client gives up before someguy flushes and every record someguy resolved is lost. [#169](https://github.com/ipfs/someguy/pull/169)
+
+### Changed
+
+- boxo (`main`, past [v0.42.0](https://github.com/ipfs/boxo/releases/tag/v0.42.0)) and [go-libp2p-kad-dht v0.42.1](https://github.com/libp2p/go-libp2p-kad-dht/releases/tag/v0.42.1) [#171](https://github.com/ipfs/someguy/pull/171)
+- someguy now shuts the DHT down explicitly. Its constructors stopped taking a context in [go-libp2p-kad-dht v0.42.0](https://github.com/libp2p/go-libp2p-kad-dht/releases/tag/v0.42.0), so cancelling the context that built them no longer stops their long-lived goroutines. `SIGTERM` now closes both the standard and accelerated clients before someguy exits. [#171](https://github.com/ipfs/someguy/pull/171)
+- `/routing/v1` responses no longer let a cache serve a two-day-old answer while someguy is healthy. `stale-while-revalidate` is now 10 minutes for responses with results and 1 minute for empty ones, which covers a background refresh. `stale-if-error` only applies when someguy is failing, so responses with results keep the 48h Amino DHT expiration window, and empty ones drop to 1 hour. `max-age` is unchanged. The addresses someguy returns come from short-lived sources such as relay reservations, so a stale window measured in days handed clients addresses that had stopped working long ago. [ipfs/boxo#1195](https://github.com/ipfs/boxo/pull/1195)
+
+### Removed
 
 ### Fixed
 

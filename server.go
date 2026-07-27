@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"net"
@@ -170,13 +171,13 @@ func start(ctx context.Context, cfg *config) error {
 	var dhtRouting routing.Routing
 	switch cfg.dhtType {
 	case "accelerated":
-		wrappedDHT, err := newBundledDHT(ctx, h, bootstrapAddrInfos)
+		wrappedDHT, err := newBundledDHT(h, bootstrapAddrInfos)
 		if err != nil {
 			return err
 		}
 		dhtRouting = wrappedDHT
 	case "standard":
-		standardDHT, err := dht.New(ctx, h, dht.Mode(dht.ModeClient), dht.BootstrapPeers(bootstrapAddrInfos...))
+		standardDHT, err := dht.New(h, dht.Mode(dht.ModeClient), dht.BootstrapPeers(bootstrapAddrInfos...))
 		if err != nil {
 			return err
 		}
@@ -347,6 +348,16 @@ func start(ctx context.Context, cfg *config) error {
 
 	go server.Close()
 	wg.Wait()
+
+	// The DHT constructors stopped taking a context in
+	// go-libp2p-kad-dht v0.42.0, so cancelling ctx no longer stops them.
+	// Close blocks until their long-lived components have shut down.
+	if closer, ok := dhtRouting.(io.Closer); ok {
+		if err := closer.Close(); err != nil {
+			logger.Errorw("closing DHT", "err", err)
+		}
+	}
+
 	fmt.Println("Shutdown finished.")
 	return nil
 }
