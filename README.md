@@ -88,6 +88,7 @@ See [environment-variables.md](docs/environment-variables.md) for URL formats an
 
 - [environment-variables.md](docs/environment-variables.md): all config flags and environment variables
 - [peer-address-caching.md](docs/peer-address-caching.md): how `/providers` and `/peers` cache and refresh peer addresses
+- [dnsaddr-resolution.md](docs/dnsaddr-resolution.md): why `/dnsaddr` is resolved before `filter-addrs`, and how it is bounded
 - [metrics.md](docs/metrics.md): Prometheus metrics
 - [tracing.md](docs/tracing.md): OpenTelemetry tracing
 

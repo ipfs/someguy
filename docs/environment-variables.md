@@ -9,6 +9,7 @@ The environment variables below override `someguy`'s built-in defaults.
   - [`SOMEGUY_CACHED_ADDR_BOOK_RECENT_TTL`](#someguy_cached_addr_book_recent_ttl)
   - [`SOMEGUY_CACHED_ADDR_BOOK_ACTIVE_PROBING`](#someguy_cached_addr_book_active_probing)
   - [`SOMEGUY_CACHED_ADDR_BOOK_MAX_CONCURRENT_FIND_PEERS`](#someguy_cached_addr_book_max_concurrent_find_peers)
+  - [`SOMEGUY_DNSADDR_RESOLUTION`](#someguy_dnsaddr_resolution)
   - [`SOMEGUY_ROUTING_TIMEOUT`](#someguy_routing_timeout)
   - [`SOMEGUY_RECORDS_LIMIT`](#someguy_records_limit)
   - [`SOMEGUY_STREAMING_RECORDS_LIMIT`](#someguy_streaming_records_limit)
@@ -74,6 +75,23 @@ Maximum background `FindPeer` lookups that run at once. Someguy starts one of th
 Raise this only if `someguy_cached_router_find_peer_lookups_rejected` keeps increasing. See [metrics.md](metrics.md) and [peer-address-caching.md](peer-address-caching.md).
 
 Default: `512`
+
+### `SOMEGUY_DNSADDR_RESOLUTION`
+
+Controls when Someguy replaces a `/dnsaddr` address with the addresses it names.
+
+A `/dnsaddr` carries no transport component, so [`filter-addrs`](https://specs.ipfs.tech/routing/http-routing-v1/) can neither match it nor exclude it. A provider reachable only through a `/dnsaddr` is dropped from a filtered response, and a provider the client asked to exclude survives one. Resolving before the filter runs fixes both.
+
+- `append` (default): resolve on every request. A request that sends `filter-addrs` gets the `/dnsaddr` replaced, because a filter cannot match one and it would otherwise survive a filter meant to exclude it. A request without a filter gets the resolved addresses added and keeps the `/dnsaddr`, so it can dial now and re-resolve later.
+- `replace`: like `append`, but a request without a filter also gets the `/dnsaddr` replaced. Responses are smaller and no client has to resolve a `/dnsaddr` itself, at the cost of the indirection: a client cannot re-resolve the hostname later from the response alone.
+- `filtered`: resolve only when the request sends `filter-addrs`, and replace the `/dnsaddr` when it does. Requests without a filter are left alone and cost no DNS lookup.
+- `never`: never resolve.
+
+In every resolving mode, a filter whose positive entries name `dnsaddr` itself keeps the `/dnsaddr`: that is the one filter which can match it, and the client sending it is asking for the indirections. See [dnsaddr-resolution.md](dnsaddr-resolution.md) for the details.
+
+Resolved sets are cached, and one request cannot trigger an unbounded number of DNS lookups. See [dnsaddr-resolution.md](dnsaddr-resolution.md).
+
+Default: `append`
 
 ### `SOMEGUY_ROUTING_TIMEOUT`
 

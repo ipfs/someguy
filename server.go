@@ -116,6 +116,7 @@ type config struct {
 	cachedAddrBookRecentTTL     time.Duration
 	cachedAddrBookMaxFindPeers  int
 	routingTimeout              time.Duration
+	dnsAddrResolution           DNSAddrResolution
 	recordsLimit                int
 	streamingRecordsLimit       int
 
@@ -240,9 +241,18 @@ func start(ctx context.Context, cfg *config) error {
 	}
 
 	// Combine HTTP routers with DHT and additional routers
-	crRouters := combineRouters(h, dhtRouting, cachedAddrBook, providerHTTPRouters, blockProviderRouters)
-	prRouters := combineRouters(h, dhtRouting, cachedAddrBook, peerHTTPRouters, nil)
-	ipnsRouters := combineRouters(h, dhtRouting, cachedAddrBook, ipnsHTTPRouters, nil)
+	var dnsAddr *dnsAddrResolver
+	if cfg.dnsAddrResolution != DNSAddrResolutionNever {
+		dnsAddr, err = newDNSAddrResolver(nil)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Resolving /dnsaddr provider addresses: %s\n", cfg.dnsAddrResolution)
+	}
+
+	crRouters := combineRouters(h, dhtRouting, cachedAddrBook, providerHTTPRouters, blockProviderRouters, dnsAddr, cfg.dnsAddrResolution)
+	prRouters := combineRouters(h, dhtRouting, cachedAddrBook, peerHTTPRouters, nil, dnsAddr, cfg.dnsAddrResolution)
+	ipnsRouters := combineRouters(h, dhtRouting, cachedAddrBook, ipnsHTTPRouters, nil, dnsAddr, cfg.dnsAddrResolution)
 
 	// Create DHT router for GetClosestPeers endpoint
 	var dhtRouters router
@@ -251,6 +261,11 @@ func start(ctx context.Context, cfg *config) error {
 		dhtRouters = sanitizeRouter{cachedRouter}
 	} else if dhtRouting != nil {
 		dhtRouters = sanitizeRouter{libp2pRouter{host: h, routing: dhtRouting}}
+	}
+	if dhtRouters != nil {
+		// Peerstore addresses can carry /dnsaddr too (learned via identify),
+		// so the closest-peers endpoint resolves like the other endpoints.
+		dhtRouters = withDNSAddrResolution(dhtRouters, dnsAddr, cfg.dnsAddrResolution)
 	}
 
 	_, port, err := net.SplitHostPort(cfg.listenAddress)
@@ -287,6 +302,10 @@ func start(ctx context.Context, cfg *config) error {
 		ipns:      ipnsRouters,
 		dht:       dhtRouters,
 	}, handlerOpts...)
+
+	// Record filter-addrs so the routers can see it. Must wrap the
+	// /routing/v1 handler, whose request context is the one the routers get.
+	handler = withAddrFilter(handler)
 
 	// Add CORS.
 	handler = cors.New(cors.Options{
@@ -401,7 +420,7 @@ func newHost(cfg *config) (host.Host, error) {
 
 // combineRouters combines delegated HTTP routers with DHT and additional routers.
 // It no longer creates HTTP clients (that's done in createDelegatedHTTPRouters).
-func combineRouters(h host.Host, dht routing.Routing, cachedAddrBook *cachedAddrBook, delegatedRouters, additionalRouters []router) router {
+func combineRouters(h host.Host, dht routing.Routing, cachedAddrBook *cachedAddrBook, delegatedRouters, additionalRouters []router, dnsAddr *dnsAddrResolver, dnsAddrMode DNSAddrResolution) router {
 	var dhtRouter router
 
 	if cachedAddrBook != nil {
@@ -415,7 +434,7 @@ func combineRouters(h host.Host, dht routing.Routing, cachedAddrBook *cachedAddr
 		if dhtRouter == nil {
 			return composableRouter{}
 		}
-		return dhtRouter
+		return withDNSAddrResolution(dhtRouter, dnsAddr, dnsAddrMode)
 	}
 
 	var routers []router
@@ -425,9 +444,17 @@ func combineRouters(h host.Host, dht routing.Routing, cachedAddrBook *cachedAddr
 	}
 	routers = append(routers, additionalRouters...)
 
-	return parallelRouter{
-		routers: routers,
+	// Resolution wraps the composed router rather than sitting beside
+	// sanitizeRouter, because /dnsaddr records reach someguy from the delegated
+	// HTTP routers, which sanitizeRouter does not cover.
+	return withDNSAddrResolution(parallelRouter{routers: routers}, dnsAddr, dnsAddrMode)
+}
+
+func withDNSAddrResolution(r router, resolver *dnsAddrResolver, mode DNSAddrResolution) router {
+	if resolver == nil || mode == DNSAddrResolutionNever {
+		return r
 	}
+	return dnsAddrRouter{router: r, resolver: resolver, mode: mode}
 }
 
 func withTracingAndDebug(next http.Handler, authToken string) http.Handler {
