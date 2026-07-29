@@ -20,6 +20,7 @@ The following emojis are used to highlight certain changes:
 
 ### Changed
 
+- [boxo v0.42.1](https://github.com/ipfs/boxo/releases/tag/v0.42.1) and [go-libp2p v0.49.0](https://github.com/libp2p/go-libp2p/releases/tag/v0.49.0)
 - Go 1.26 is now the minimum. [#174](https://github.com/ipfs/someguy/pull/174)
 
 ### Removed
