@@ -21,6 +21,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/routing"
+	ma "github.com/multiformats/go-multiaddr"
 	manet "github.com/multiformats/go-multiaddr/net"
 )
 
@@ -645,21 +646,154 @@ func filterPrivateMultiaddr(a []types.Multiaddr) []types.Multiaddr {
 		b = append(b, addr)
 	}
 
-	// Sort for a stable response across requests, and place relay
-	// (/p2p-circuit) addresses last so a client tries direct, dialable addresses
-	// first and only falls back to a relay. Addresses can arrive in
-	// nondeterministic order (e.g. the peerstore stores them in a map), and this
-	// runs on every record from every router, so all sources are covered.
-	slices.SortFunc(b, func(x, y types.Multiaddr) int {
-		xRelay, yRelay := isRelayAddr(x.Multiaddr), isRelayAddr(y.Multiaddr)
-		if xRelay != yRelay {
-			if xRelay {
-				return 1
-			}
-			return -1
-		}
-		return bytes.Compare(x.Multiaddr.Bytes(), y.Multiaddr.Bytes())
-	})
+	slices.SortFunc(b, compareAddrs)
 
 	return b
+}
+
+// compareAddrs sorts for a stable response across requests, ordered by how
+// directly a client can dial each address: IP addresses first, then DNS names,
+// then /dnsaddr indirections that need a TXT lookup, then anything else, with
+// relay (/p2p-circuit) addresses as the last resort. Addresses can arrive in
+// nondeterministic order (e.g. the peerstore stores them in a map).
+func compareAddrs(x, y types.Multiaddr) int {
+	if d := addrSortRank(x.Multiaddr) - addrSortRank(y.Multiaddr); d != 0 {
+		return d
+	}
+	return bytes.Compare(x.Multiaddr.Bytes(), y.Multiaddr.Bytes())
+}
+
+// sortedAddrs returns addrs in compareAddrs order without dropping any. It is
+// for records that pass through otherwise untouched, so every record in a
+// response comes out ordered the same way.
+func sortedAddrs(addrs []types.Multiaddr) []types.Multiaddr {
+	out := slices.Clone(addrs)
+	slices.SortFunc(out, compareAddrs)
+	return out
+}
+
+// addrSortRank buckets an address by how directly a client can dial it: IP
+// addresses, then DNS names that cost one lookup, then /dnsaddr indirections
+// that need a TXT lookup, then everything else, then /p2p-circuit relays. A
+// relay reached through any transport counts as a relay.
+func addrSortRank(addr ma.Multiaddr) int {
+	if isRelayAddr(addr) {
+		return 4
+	}
+	protos := addr.Protocols()
+	if len(protos) == 0 {
+		return 3
+	}
+	switch protos[0].Code {
+	case ma.P_IP4, ma.P_IP6:
+		return 0
+	case ma.P_DNS, ma.P_DNS4, ma.P_DNS6:
+		return 1
+	case ma.P_DNSADDR:
+		return 2
+	default:
+		return 3
+	}
+}
+
+// dnsAddrRouter replaces /dnsaddr addresses with the addresses they name,
+// before the /routing/v1 handler applies filter-addrs.
+//
+// It wraps each whole composed router rather than sitting next to
+// sanitizeRouter, because sanitizeRouter only covers the DHT branch while
+// /dnsaddr records reach someguy from delegated HTTP routers.
+type dnsAddrRouter struct {
+	router
+	resolver *dnsAddrResolver
+	mode     DNSAddrResolution
+}
+
+var _ server.ContentRouter = dnsAddrRouter{}
+
+//lint:ignore SA1019 // ignore staticcheck
+func (r dnsAddrRouter) ProvideBitswap(ctx context.Context, req *server.BitswapWriteProvideRequest) (time.Duration, error) {
+	return 0, routing.ErrNotSupported
+}
+
+// resolveRecordAddrs resolves a record's addresses and re-runs the private
+// address filter over the result. Resolution has to happen before that filter,
+// not after: manet treats /dnsaddr/anything as public, so a name that resolves
+// to an RFC1918 address would otherwise be served to clients.
+//
+// Records that need no resolution are still sorted, so the whole response is
+// ordered the same way, delegated-router records included.
+func (r dnsAddrRouter) resolveRecordAddrs(ctx context.Context, pid *peer.ID, addrs []types.Multiaddr, budget *dnsAddrBudget) []types.Multiaddr {
+	if pid == nil || !containsDNSAddr(addrs) {
+		return sortedAddrs(addrs)
+	}
+	action := r.mode.action(ctx)
+	if action == dnsAddrSkip {
+		return sortedAddrs(addrs)
+	}
+	return filterPrivateMultiaddr(r.resolver.resolveAddrs(ctx, *pid, addrs, budget, action == dnsAddrAppend))
+}
+
+func (r dnsAddrRouter) FindProviders(ctx context.Context, key cid.Cid, limit int) (iter.ResultIter[types.Record], error) {
+	it, err := r.router.FindProviders(ctx, key, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	budget := newDNSAddrBudget()
+	return iter.Map(it, func(v iter.Result[types.Record]) iter.Result[types.Record] {
+		if v.Err != nil || v.Val == nil {
+			return v
+		}
+
+		switch v.Val.GetSchema() {
+		case types.SchemaPeer:
+			result, ok := v.Val.(*types.PeerRecord)
+			if !ok {
+				return v
+			}
+			result.Addrs = r.resolveRecordAddrs(ctx, result.ID, result.Addrs, budget)
+			v.Val = result
+
+		//lint:ignore SA1019 // ignore staticcheck
+		case types.SchemaBitswap:
+			//lint:ignore SA1019 // ignore staticcheck
+			result, ok := v.Val.(*types.BitswapRecord)
+			if !ok {
+				return v
+			}
+			result.Addrs = r.resolveRecordAddrs(ctx, result.ID, result.Addrs, budget)
+			v.Val = result
+		}
+
+		return v
+	}), nil
+}
+
+// resolvePeerRecords resolves every record of one response, sharing one
+// budget across it.
+func (r dnsAddrRouter) resolvePeerRecords(ctx context.Context, it iter.ResultIter[*types.PeerRecord]) iter.ResultIter[*types.PeerRecord] {
+	budget := newDNSAddrBudget()
+	return iter.Map(it, func(v iter.Result[*types.PeerRecord]) iter.Result[*types.PeerRecord] {
+		if v.Err != nil || v.Val == nil {
+			return v
+		}
+		v.Val.Addrs = r.resolveRecordAddrs(ctx, v.Val.ID, v.Val.Addrs, budget)
+		return v
+	})
+}
+
+func (r dnsAddrRouter) FindPeers(ctx context.Context, pid peer.ID, limit int) (iter.ResultIter[*types.PeerRecord], error) {
+	it, err := r.router.FindPeers(ctx, pid, limit)
+	if err != nil {
+		return nil, err
+	}
+	return r.resolvePeerRecords(ctx, it), nil
+}
+
+func (r dnsAddrRouter) GetClosestPeers(ctx context.Context, key cid.Cid) (iter.ResultIter[*types.PeerRecord], error) {
+	it, err := r.router.GetClosestPeers(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	return r.resolvePeerRecords(ctx, it), nil
 }

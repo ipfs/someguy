@@ -21,16 +21,24 @@ func TestCombineRouters(t *testing.T) {
 	mockRouter := composableRouter{}
 
 	// Check that combineRouters with DHT only returns sanitizeRouter
-	v := combineRouters(nil, &bundledDHT{}, nil, nil, nil)
+	v := combineRouters(nil, &bundledDHT{}, nil, nil, nil, nil, DNSAddrResolutionNever)
 	require.IsType(t, sanitizeRouter{}, v)
 
 	// Check that combineRouters with delegated routers only returns parallelRouter
-	v = combineRouters(nil, nil, nil, []router{mockRouter}, nil)
+	v = combineRouters(nil, nil, nil, []router{mockRouter}, nil, nil, DNSAddrResolutionNever)
 	require.IsType(t, parallelRouter{}, v)
 
 	// Check that combineRouters with both DHT and delegated routers returns parallelRouter
-	v = combineRouters(nil, &bundledDHT{}, nil, []router{mockRouter}, nil)
+	v = combineRouters(nil, &bundledDHT{}, nil, []router{mockRouter}, nil, nil, DNSAddrResolutionNever)
 	require.IsType(t, parallelRouter{}, v)
+
+	// Check that a resolver wraps both branches in dnsAddrRouter
+	resolver, err := newDNSAddrResolver(nil)
+	require.NoError(t, err)
+	v = combineRouters(nil, &bundledDHT{}, nil, nil, nil, resolver, DNSAddrResolutionAppend)
+	require.IsType(t, dnsAddrRouter{}, v)
+	v = combineRouters(nil, nil, nil, []router{mockRouter}, nil, resolver, DNSAddrResolutionAppend)
+	require.IsType(t, dnsAddrRouter{}, v)
 }
 
 // A record that resolved early has to reach the client while later records
