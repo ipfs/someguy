@@ -68,6 +68,12 @@ func main() {
 						EnvVars:     []string{"SOMEGUY_CACHED_ADDR_BOOK_MAX_CONCURRENT_FIND_PEERS"},
 						Usage:       "maximum background FindPeer lookups running at once for provider records that arrive without addresses",
 					},
+					&cli.StringFlag{
+						Name:    "dnsaddr-resolution",
+						Value:   string(DNSAddrResolutionAppend),
+						EnvVars: []string{"SOMEGUY_DNSADDR_RESOLUTION"},
+						Usage:   "what an unfiltered response does with a /dnsaddr it resolved: 'append' (add the resolved addresses, keep the /dnsaddr), 'replace' (drop the /dnsaddr), 'filtered' (resolve only when the request sends filter-addrs), or 'never'; a request that sends filter-addrs gets it replaced in every resolving mode, unless the filter itself names dnsaddr",
+					},
 					&cli.DurationFlag{
 						Name:        "routing-timeout",
 						DefaultText: DefaultRoutingTimeout.String(),
@@ -214,6 +220,10 @@ func main() {
 					if streamingRecordsLimit < 0 {
 						return fmt.Errorf("streaming-records-limit must be non-negative, got %d (0 means unbounded)", streamingRecordsLimit)
 					}
+					dnsAddrResolution, err := ParseDNSAddrResolution(ctx.String("dnsaddr-resolution"))
+					if err != nil {
+						return err
+					}
 					cfg := &config{
 						listenAddress:               ctx.String("listen-address"),
 						dhtType:                     ctx.String("dht"),
@@ -222,6 +232,7 @@ func main() {
 						cachedAddrBookRecentTTL:     ctx.Duration("cached-addr-book-recent-ttl"),
 						cachedAddrBookMaxFindPeers:  ctx.Int("cached-addr-book-max-concurrent-find-peers"),
 						routingTimeout:              ctx.Duration("routing-timeout"),
+						dnsAddrResolution:           dnsAddrResolution,
 						recordsLimit:                recordsLimit,
 						streamingRecordsLimit:       streamingRecordsLimit,
 

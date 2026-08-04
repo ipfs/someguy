@@ -37,3 +37,12 @@ and tracked here. See [peer-address-caching.md](peer-address-caching.md).
 - `someguy_cached_router_find_peer_lookups_rejected`: counter of lookups skipped because the cap was reached. A sustained increase means providers are being dropped that Someguy would otherwise have resolved, so either raise the cap or look at where the traffic is coming from.
 - `someguy_cached_router_find_peer_lookup_duration_seconds_[bucket|sum|count]`: histogram of how long each background lookup runs. Multiply by the dispatch rate to get expected concurrency, which is how the cap is sized.
 
+
+### DNSADDR resolution
+
+Someguy replaces `/dnsaddr` provider addresses with the addresses they name
+before applying `filter-addrs`. See
+[dnsaddr-resolution.md](dnsaddr-resolution.md).
+
+- `someguy_routers_dnsaddr_resolutions{result}`: counter of resolution outcomes, labeled `cache-hit`, `resolved`, `empty`, `failed`, or `throttled` (out of per-request lookups). `cache-hit` and `throttled` count once per `/dnsaddr` seen; `resolved`, `empty`, and `failed` count once per DNS query, and concurrent requests waiting on the same name share one query. A rising `throttled` means requests are hitting the per-request lookup cap. A low `cache-hit` share means the hostnames being asked for keep changing, which is what an abusive client looks like.
+- `someguy_routers_dnsaddr_resolution_duration_seconds_[bucket|sum|count]`: histogram of DNS query durations, one sample per query. Queries run detached from the request, but a record whose name is being queried waits for the answer, so the tail here is added latency for responses that hit uncached names.

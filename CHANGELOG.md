@@ -23,6 +23,18 @@ The following emojis are used to highlight certain changes:
 
 ### Security
 
+## [v0.16.0] - 2026-07-29
+
+### Added
+
+- someguy now replaces a `/dnsaddr` provider address with the addresses it names, before it applies `filter-addrs`. A `/dnsaddr` carries no transport component, so a filter could neither match nor exclude it: a provider reachable only through a `/dnsaddr` was dropped from a filtered response, and a provider the client asked to exclude survived one. someguy resolves on every request by default. A request that sends `filter-addrs` gets the `/dnsaddr` replaced, since keeping it would let a record survive a filter meant to exclude it (unless a positive filter entry names `dnsaddr`, the one filter that can match it; then the `/dnsaddr` is kept). A request without a filter gets the resolved addresses added and keeps the `/dnsaddr`, so it can dial straight away and still re-resolve later. Set `SOMEGUY_DNSADDR_RESOLUTION=replace` to drop the `/dnsaddr` from unfiltered responses too, `filtered` to skip the lookup for unfiltered requests, or `never` to disable it (the default is `append`). Lookups are cached and bounded per request, watched by two new metrics: `someguy_routers_dnsaddr_resolutions` and `someguy_routers_dnsaddr_resolution_duration_seconds`. See [`docs/dnsaddr-resolution.md`](https://github.com/ipfs/someguy/blob/main/docs/dnsaddr-resolution.md). [#174](https://github.com/ipfs/someguy/pull/174)
+- Addresses within a record are now ordered by how directly a client can dial them: IP first, then DNS names, then `/dnsaddr`, with `/p2p-circuit` relays last. [#174](https://github.com/ipfs/someguy/pull/174)
+
+### Changed
+
+- [boxo v0.42.1](https://github.com/ipfs/boxo/releases/tag/v0.42.1) and [go-libp2p v0.49.0](https://github.com/libp2p/go-libp2p/releases/tag/v0.49.0)
+- Go 1.26 is now the minimum. [#174](https://github.com/ipfs/someguy/pull/174)
+
 ## [v0.15.0] - 2026-07-27
 
 ### Added
