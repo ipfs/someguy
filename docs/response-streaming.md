@@ -11,10 +11,11 @@ traps that break streaming.
 
 someguy is tuned for browser clients, and a browser works under tighter limits
 than a server. A page shares one connection pool across everything it loads, so
-every routing lookup is a request it cannot spend on content. Someone is waiting on the result, so a provider that arrives in two
-seconds is useful and the same provider after twenty usually is not. A tab has
-less memory and CPU than a server, and a service worker running alongside the
-page it serves has less still.
+every routing lookup is a request it cannot spend on content. Someone is
+waiting on the result, so a provider that arrives in two seconds is useful and
+the same provider after twenty usually is not. A tab has less memory and CPU
+than a server, and a service worker running alongside the page it serves has
+less still.
 
 Two behaviors follow, and both look wrong from a server's point of view.
 Results go out as someguy finds them, so a client can act on the first usable
