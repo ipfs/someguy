@@ -87,7 +87,8 @@ See [environment-variables.md](docs/environment-variables.md) for URL formats an
 ## Documentation
 
 - [environment-variables.md](docs/environment-variables.md): all config flags and environment variables
-- [peer-address-caching.md](docs/peer-address-caching.md): how `/providers` and `/peers` cache and refresh peer addresses
+- [peer-address-caching.md](docs/peer-address-caching.md): how `/providers` and `/peers` cache and refresh peer addresses, and the trade-offs behind what someguy deliberately does not do
+- [response-streaming.md](docs/response-streaming.md): NDJSON streaming contract, the timeout budget, and traps that break streaming
 - [dnsaddr-resolution.md](docs/dnsaddr-resolution.md): why `/dnsaddr` is resolved before `filter-addrs`, and how it is bounded
 - [metrics.md](docs/metrics.md): Prometheus metrics
 - [tracing.md](docs/tracing.md): OpenTelemetry tracing

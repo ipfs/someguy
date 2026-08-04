@@ -29,8 +29,9 @@ When Someguy aggregates other `/routing/v1` endpoints, `boxo/routing/http/client
 
 When a provider record arrives without addresses and the cache has none, Someguy
 dispatches a `FindPeer` in the background. These outlive the request that
-triggered them, so they are capped (512 concurrent per instance by default) and
-tracked here. See [peer-address-caching.md](peer-address-caching.md).
+triggered them, so they are capped per instance by
+[`SOMEGUY_CACHED_ADDR_BOOK_MAX_CONCURRENT_FIND_PEERS`](environment-variables.md#someguy_cached_addr_book_max_concurrent_find_peers)
+and tracked here. See [peer-address-caching.md](peer-address-caching.md).
 
 - `someguy_cached_router_find_peer_lookups_in_flight`: gauge of background lookups currently running. Compare against the cap: steady state well below it means normal traffic never reaches the limit.
 - `someguy_cached_router_find_peer_lookups_rejected`: counter of lookups skipped because the cap was reached. A sustained increase means providers are being dropped that Someguy would otherwise have resolved, so either raise the cap or look at where the traffic is coming from.
