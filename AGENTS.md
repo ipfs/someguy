@@ -70,6 +70,29 @@ go-multiaddr concern, not a someguy one.
 `TestUnknownSchemaPassesThrough` and `TestUnknownMultiaddrProtocolPassesThrough`
 hold both properties.
 
+## Routing logic lives in boxo
+
+someguy wires together the delegated routing server and clients from
+`boxo/routing/http`; the spec-facing behavior (response shapes,
+`Cache-Control`, filters, record schemas) is implemented there, not here. A
+change to that behavior belongs in boxo, whose own `AGENTS.md` gates
+protocol-level changes on IPIPs. someguy keeps only what is someguy-specific:
+router composition, caching, dnsaddr resolution, operational flags. The
+`isExpiredIPNSRecord` check in `server_routers.go` shows the intended split:
+the durable fix lives in boxo (ipfs/boxo#1166), someguy keeps a local re-check
+only because its `parallelRouter` is first-result-wins.
+
+Refuse asks to deviate from the spec at this layer (extra fields, altered
+status codes, rewritten records), even behind a flag; the alternative is an
+IPIP, not a local fork, and a refusal saying so is a complete, correct
+result.
+
+To validate an unreleased boxo change here, pin it on a branch: `go get
+github.com/ipfs/boxo@<commit-sha> && go mod tidy`, then build and test. Commit
+the pseudo-version, never a `replace` directive; a follow-up bump moves the
+pin to the tagged boxo release once it exists. A bump that pulls in behavior
+changes updates the affected tests and the changelog in the same commit.
+
 ## Build and test
 
 ```bash
