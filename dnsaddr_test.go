@@ -235,7 +235,7 @@ func TestDNSAddrResolver(t *testing.T) {
 		t.Parallel()
 		txt := map[string][]string{}
 		// A chain longer than the limit, ending in a real address that must not be reached.
-		for i := 0; i < DNSAddrRecursionLimit+2; i++ {
+		for i := range DNSAddrRecursionLimit + 2 {
 			txt[fmt.Sprintf("_dnsaddr.hop%d.example", i)] = []string{
 				fmt.Sprintf("dnsaddr=/dnsaddr/hop%d.example/p2p/%s", i+1, testPeerA),
 			}
@@ -255,7 +255,7 @@ func TestDNSAddrResolver(t *testing.T) {
 		t.Parallel()
 		txt := map[string][]string{}
 		var addrs []string
-		for i := 0; i < MaxDNSAddrLookupsPerRequest+5; i++ {
+		for i := range MaxDNSAddrLookupsPerRequest + 5 {
 			host := fmt.Sprintf("h%d.example", i)
 			txt["_dnsaddr."+host] = []string{"dnsaddr=/dns4/" + host + "/tcp/1/ws/p2p/" + testPeerA}
 			addrs = append(addrs, "/dnsaddr/"+host)
@@ -273,7 +273,7 @@ func TestDNSAddrResolver(t *testing.T) {
 			"_dnsaddr.cached.example": {"dnsaddr=/dns4/cached.example/tcp/1/ws/p2p/" + testPeerA},
 		}}
 		r := newStubResolver(t, s)
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			budget := newDNSAddrBudget()
 			r.resolveAddrs(t.Context(), pidA, mustAddrs(t, "/dnsaddr/cached.example"), budget, false)
 		}
@@ -285,7 +285,7 @@ func TestDNSAddrResolver(t *testing.T) {
 		txt := map[string][]string{}
 		var addrs []string
 		n := MaxDNSAddrLookupsPerRequest + 5
-		for i := 0; i < n; i++ {
+		for i := range n {
 			host := fmt.Sprintf("warm%d.example", i)
 			txt["_dnsaddr."+host] = []string{"dnsaddr=/dns4/" + host + "/tcp/1/ws/p2p/" + testPeerA}
 			addrs = append(addrs, "/dnsaddr/"+host)
@@ -310,7 +310,7 @@ func TestDNSAddrResolver(t *testing.T) {
 		t.Parallel()
 		txt := map[string][]string{}
 		var recs []*types.PeerRecord
-		for i := 0; i < MaxDNSAddrLookupsPerRequest+5; i++ {
+		for i := range MaxDNSAddrLookupsPerRequest + 5 {
 			host := fmt.Sprintf("rec%d.example", i)
 			txt["_dnsaddr."+host] = []string{"dnsaddr=/dns4/" + host + "/tcp/1/ws/p2p/" + testPeerA}
 			recs = append(recs, &types.PeerRecord{
@@ -457,7 +457,7 @@ func TestDNSAddrResolver(t *testing.T) {
 		txt := map[string][]string{}
 		fanout := func(host string, n int) {
 			var entries []string
-			for i := 0; i < n; i++ {
+			for i := range n {
 				entries = append(entries, fmt.Sprintf("dnsaddr=/dns4/%s/tcp/%d/ws/p2p/%s", host, i+1, testPeerA))
 			}
 			txt["_dnsaddr."+host] = entries
@@ -519,13 +519,13 @@ func TestDNSAddrResolver(t *testing.T) {
 			r := newStubResolver(t, s)
 			addrs := mustAddrs(t, "/dnsaddr/busy.example")
 			results := make(chan []string, 5)
-			for i := 0; i < 5; i++ {
+			for range 5 {
 				go func() {
 					budget := newDNSAddrBudget()
 					results <- addrStrings(r.resolveAddrs(t.Context(), pidA, addrs, budget, false))
 				}()
 			}
-			for i := 0; i < 5; i++ {
+			for range 5 {
 				require.Equal(t, []string{"/dns4/busy.example/tcp/1/ws"}, <-results)
 			}
 			require.Equal(t, 1, s.count("_dnsaddr.busy.example"),
@@ -812,7 +812,7 @@ func TestDNSAddrResolverBounds(t *testing.T) {
 		t.Parallel()
 		const fan = 40
 		var entries []string
-		for i := 0; i < fan; i++ {
+		for i := range fan {
 			entries = append(entries,
 				"dnsaddr=/dnsaddr/evil.example/p2p/"+testPeerA,
 				fmt.Sprintf("dnsaddr=/ip4/10.0.0.%d/tcp/1/p2p/%s", i, testPeerA))
@@ -837,10 +837,10 @@ func TestDNSAddrResolverBounds(t *testing.T) {
 		t.Parallel()
 		txt := map[string][]string{}
 		var addrs []string
-		for i := 0; i < 4; i++ {
+		for i := range 4 {
 			host := fmt.Sprintf("many%d.example", i)
 			var entries []string
-			for j := 0; j < 60; j++ {
+			for j := range 60 {
 				entries = append(entries, fmt.Sprintf("dnsaddr=/ip4/10.%d.0.%d/tcp/1/p2p/%s", i, j, testPeerA))
 			}
 			txt["_dnsaddr."+host] = entries
