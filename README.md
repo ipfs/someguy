@@ -10,7 +10,7 @@
 
 Someguy is an [HTTP Delegated Routing V1](https://specs.ipfs.tech/routing/http-routing-v1/) server that proxies requests to the [Amino DHT](https://docs.ipfs.tech/concepts/glossary/#amino) and other [delegated routing servers](https://specs.ipfs.tech/routing/http-routing-v1/).
 
-[Shipyard](https://ipshipyard.com/) also runs a [public Someguy instance](https://docs.ipfs.tech/concepts/public-utilities/#delegated-routing-endpoint) at `https://delegated-ipfs.dev/routing/v1`.
+Someguy was the backend of `https://delegated-ipfs.dev/routing/v1` until 2026 Q3 (see [Maintainer Info](#maintainer-info)).
 
 ## Build
 
