@@ -105,6 +105,15 @@ For self-hosting, run the [prebuilt Docker image](#docker).
 2. Once the release checker creates a draft release, copy-paste the changelog into the draft
 3. Merge the PR; the release workflow tags and publishes automatically
 
+## Maintainer Info
+
+> [!IMPORTANT]
+> There is no dedicated maintainer at the moment.
+>
+> After Protocol Labs nucleation, the [Shipyard](https://ipshipyard.com/) team maintained this project in 2024, 2025 and 2026. Shipyard's IPFS maintenance work [ended with 2026 Q3](https://ipshipyard.com/blog/2026-the-end-of-ipfs-at-shipyard/).
+>
+> Bring support and transition questions to the [community forum](https://discuss.ipfs.tech/).
+
 ## License
 
 Dual-licensed under [MIT + Apache 2.0](LICENSE.md)
